@@ -4,8 +4,10 @@ module AddressParameterParsing
   private
 
   def parse_address_from_params(address_params)
-    return nil if address_params.blank?
-
+    if address_params.blank?
+      render json: { error: "address is required" }, status: :unprocessable_entity
+      return nil
+    end
 
     # Normalize country name using FrickinCountryNames
     country = FrickinCountryNames.find_country(address_params[:country])
