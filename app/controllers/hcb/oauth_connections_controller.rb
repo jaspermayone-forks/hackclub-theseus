@@ -18,11 +18,15 @@ class HCB::OauthConnectionsController < ApplicationController
     )
 
     connection = current_user.hcb_oauth_connection || current_user.build_hcb_oauth_connection
-    connection.update!(
-      access_token: token.token,
-      refresh_token: token.refresh_token,
-      expires_at: token.expires_at ? Time.at(token.expires_at) : nil,
-    )
+    if connection.persisted?
+      connection.revalidate!(token)
+    else
+      connection.update!(
+        access_token: token.token,
+        refresh_token: token.refresh_token,
+        expires_at: token.expires_at ? Time.at(token.expires_at) : nil,
+      )
+    end
 
     redirect_to hcb_payment_accounts_path, notice: "HCB account linked! Now create a payment account."
   end

@@ -48,7 +48,9 @@ class User < ApplicationRecord
 
   def can_use_indicia? = can_use_indicia
 
-  def hcb_connected? = hcb_oauth_connection.present?
+  def hcb_connected? = hcb_oauth_connection.present? && !hcb_oauth_connection.invalidated?
+
+  def hcb_connection_invalidated? = hcb_oauth_connection&.invalidated? || false
 
   def make_admin! = update!(is_admin: true)
 

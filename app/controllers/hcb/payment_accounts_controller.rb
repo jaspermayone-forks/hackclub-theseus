@@ -11,8 +11,12 @@ class HCB::PaymentAccountsController < ApplicationController
 
   rescue_from OAuth2::Error do |e|
     Sentry.capture_exception(e, extra: { user_id: current_user.id, response_body: e.response&.body })
-    current_user.hcb_oauth_connection&.destroy
-    redirect_to new_hcb_oauth_connection_path, alert: "Your HCB connection expired. Please reconnect."
+    current_user.hcb_oauth_connection&.invalidate!
+    redirect_to hcb_payment_accounts_path
+  end
+
+  rescue_from HCB::OauthConnectionInvalidatedError do
+    redirect_to hcb_payment_accounts_path
   end
 
   def index

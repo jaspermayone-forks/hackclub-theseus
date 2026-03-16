@@ -26,7 +26,33 @@ class HCB::OauthConnection < ApplicationRecord
 
   validates :user_id, uniqueness: true
 
+  def invalidated?
+    invalidated_at.present?
+  end
+
+  def invalidate!
+    update!(
+      invalidated_at: Time.current,
+      access_token: nil,
+      refresh_token: nil,
+      expires_at: nil,
+    )
+    @client = nil
+  end
+
+  def revalidate!(token)
+    update!(
+      access_token: token.token,
+      refresh_token: token.refresh_token,
+      expires_at: token.expires_at ? Time.at(token.expires_at) : nil,
+      invalidated_at: nil,
+    )
+    @client = nil
+  end
+
   def client
+    raise OauthConnectionInvalidatedError, "HCB connection has been invalidated — please relink your account" if invalidated?
+
     @client ||= HCBV4::Client.from_credentials(
       client_id: ENV.fetch("HCB_CLIENT_ID"),
       client_secret: ENV.fetch("HCB_CLIENT_SECRET"),

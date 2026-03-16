@@ -20,6 +20,11 @@ class HCB::TransferService
     )
 
     transfer
+  rescue OAuth2::Error => e
+    hcb_payment_account.oauth_connection&.invalidate!
+    failure("HCB connection expired — please relink your account")
+  rescue HCB::OauthConnectionInvalidatedError
+    failure("HCB connection has been invalidated — please relink your account")
   rescue HCBV4::APIError => e
     failure("HCB disbursement failed: #{e.message}")
   rescue => e

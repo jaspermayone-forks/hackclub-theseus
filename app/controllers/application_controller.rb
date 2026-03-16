@@ -1,5 +1,6 @@
 class ApplicationController < ActionController::Base
   include Pundit::Authorization
+  include HcbConnectionCheck
   after_action :verify_authorized
 
   helper_method :current_user, :user_signed_in?
