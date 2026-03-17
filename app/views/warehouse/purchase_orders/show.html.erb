@@ -18,7 +18,7 @@
   <% if @purchase_order.required_by_date.present? %>
     <b>Required By:</b> <%= @purchase_order.required_by_date.strftime("%B %d, %Y") %><br>
   <% end %>
-  <b>Created By:</b> <%= link_to @purchase_order.user&.email, @purchase_order.user %><br>
+  <b>Created By:</b> <%= render "shared/user_mention", user: @purchase_order.user if @purchase_order.user %><br>
   <b>Created At:</b> <%= @purchase_order.created_at.strftime("%B %d, %Y at %I:%M %p") %><br>
 </div>
 
