@@ -5,7 +5,7 @@ class ApplicationController < ActionController::Base
 
   helper_method :current_user, :user_signed_in?
 
-  before_action :authenticate_user!, :set_sentry_context
+  before_action :authenticate_user!, :set_sentry_context, :set_paper_trail_info
 
   def current_user
     @current_user ||= User.find_by(id: session[:user_id]) if session[:user_id]
@@ -23,6 +23,10 @@ class ApplicationController < ActionController::Base
 
   def set_sentry_context
     Sentry.set_user(id: current_user&.id, email: current_user&.email)
+  end
+
+  def set_paper_trail_info
+    PaperTrail.request.controller_info = { ip: request.remote_ip }
   end
 
   rescue_from Pundit::NotAuthorizedError do |e|

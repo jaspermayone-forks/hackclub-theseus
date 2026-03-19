@@ -46,6 +46,8 @@
 #  fk_rails_...  (warehouse_template_id => warehouse_templates.id)
 #
 class Batch < ApplicationRecord
+  has_paper_trail
+
   include AASM
   include PublicIdentifiable
   set_public_id_prefix "bat"

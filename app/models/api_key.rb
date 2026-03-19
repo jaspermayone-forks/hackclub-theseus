@@ -6,6 +6,7 @@
 #  may_impersonate  :boolean
 #  name             :string
 #  pii              :boolean
+#  qz_only          :boolean
 #  revoked_at       :datetime
 #  token_bidx       :string
 #  token_ciphertext :text
@@ -23,6 +24,8 @@
 #  fk_rails_...  (user_id => users.id)
 #
 class APIKey < ApplicationRecord
+  has_paper_trail ignore: [:token_ciphertext, :token_bidx]
+
   belongs_to :user
 
   validates :token, presence: true, uniqueness: true

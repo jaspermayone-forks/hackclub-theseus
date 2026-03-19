@@ -3,7 +3,6 @@
 # Table name: users
 #
 #  id                     :bigint           not null, primary key
-#  back_office            :boolean          default(FALSE)
 #  can_impersonate_public :boolean
 #  can_use_indicia        :boolean          default(FALSE), not null
 #  can_warehouse          :boolean
@@ -30,6 +29,8 @@
 #  fk_rails_...  (home_return_address_id => return_addresses.id)
 #
 class User < ApplicationRecord
+  has_paper_trail
+
   has_many :warehouse_templates, class_name: "Warehouse::Template", inverse_of: :user
   has_many :return_addresses, dependent: :destroy
   has_many :letters

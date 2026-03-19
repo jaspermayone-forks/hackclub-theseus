@@ -27,6 +27,8 @@
 #  fk_rails_...  (user_id => users.id)
 #
 class Warehouse::PurchaseOrder < ApplicationRecord
+  has_paper_trail
+
   include AASM
   include HasZenventoryUrl
 

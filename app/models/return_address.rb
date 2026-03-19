@@ -24,6 +24,8 @@
 #  fk_rails_...  (user_id => users.id)
 #
 class ReturnAddress < ApplicationRecord
+  has_paper_trail
+
   include CountryEnumable
   has_country_enum
 

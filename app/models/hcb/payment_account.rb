@@ -21,6 +21,8 @@
 #  fk_rails_...  (user_id => users.id)
 #
 class HCB::PaymentAccount < ApplicationRecord
+  has_paper_trail
+
   belongs_to :user
   belongs_to :oauth_connection, class_name: "HCB::OauthConnection", foreign_key: :hcb_oauth_connection_id
 

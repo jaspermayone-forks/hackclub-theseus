@@ -5,6 +5,7 @@
 #  id                  :bigint           not null, primary key
 #  aasm_state          :string
 #  body                :text
+#  created_via         :integer          default(0), not null
 #  height              :decimal(, )
 #  idempotency_key     :string
 #  imb_rollover_count  :integer
@@ -36,8 +37,10 @@
 #
 # Indexes
 #
+#  index_letters_on_aasm_state         (aasm_state)
 #  index_letters_on_address_id         (address_id)
 #  index_letters_on_batch_id           (batch_id)
+#  index_letters_on_created_via        (created_via)
 #  index_letters_on_idempotency_key    (idempotency_key) UNIQUE
 #  index_letters_on_imb_serial_number  (imb_serial_number)
 #  index_letters_on_letter_queue_id    (letter_queue_id)
@@ -56,6 +59,8 @@
 #  fk_rails_...  (usps_mailer_id_id => usps_mailer_ids.id)
 #
 class Letter < ApplicationRecord
+  has_paper_trail
+
   include PublicIdentifiable
   set_public_id_prefix "ltr"
 

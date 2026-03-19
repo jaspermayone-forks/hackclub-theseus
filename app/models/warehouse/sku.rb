@@ -26,6 +26,8 @@
 #  index_warehouse_skus_on_sku  (sku) UNIQUE
 #
 class Warehouse::SKU < ApplicationRecord
+  has_paper_trail
+
   scope :in_inventory, -> { where.not(in_stock: nil, inbound: nil) }
   scope :backordered, -> { where("in_stock < 0") }
 

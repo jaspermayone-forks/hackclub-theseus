@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_01_27_200000) do
+ActiveRecord::Schema[8.0].define(version: 2026_03_19_192245) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "citext"
   enable_extension "pg_catalog.plpgsql"
@@ -503,6 +503,20 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_27_200000) do
     t.string "manifest_mid"
     t.boolean "ach"
     t.index ["usps_mailer_id_id"], name: "index_usps_payment_accounts_on_usps_mailer_id_id"
+  end
+
+  create_table "versions", force: :cascade do |t|
+    t.string "whodunnit"
+    t.datetime "created_at"
+    t.bigint "item_id", null: false
+    t.string "item_type", null: false
+    t.string "event", null: false
+    t.jsonb "object"
+    t.inet "ip"
+    t.bigint "api_key_id"
+    t.jsonb "object_changes"
+    t.index ["created_at"], name: "index_versions_on_created_at"
+    t.index ["item_type", "item_id"], name: "index_versions_on_item_type_and_item_id"
   end
 
   create_table "warehouse_line_items", force: :cascade do |t|

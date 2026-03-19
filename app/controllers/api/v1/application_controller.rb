@@ -11,6 +11,7 @@ module API
 
       include Pundit::Authorization
       include ActionController::HttpAuthentication::Token::ControllerMethods
+      include PaperTrail::Rails::Controller
 
       rescue_from Pundit::NotAuthorizedError do |e|
         render json: { error: "not_authorized" }, status: :forbidden
@@ -33,6 +34,14 @@ module API
       end
 
       private
+
+      def user_for_paper_trail
+        current_user&.id
+      end
+
+      def info_for_paper_trail
+        { ip: request.remote_ip, api_key_id: current_token&.id }
+      end
 
       def set_expand
         @expand = params[:expand].to_s.split(",").map { |e| e.strip.to_sym }

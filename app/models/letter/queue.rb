@@ -42,6 +42,8 @@
 #  fk_rails_...  (usps_payment_account_id => usps_payment_accounts.id)
 #
 class Letter::Queue < ApplicationRecord
+  has_paper_trail
+
   belongs_to :user
   has_many :letters, foreign_key: :letter_queue_id
   has_many :letter_batches, class_name: "Letter::Batch", foreign_key: :letter_queue_id

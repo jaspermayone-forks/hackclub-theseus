@@ -5,6 +5,7 @@
 #  id                       :bigint           not null, primary key
 #  access_token_ciphertext  :text
 #  expires_at               :datetime
+#  invalidated_at           :datetime
 #  refresh_token_ciphertext :text
 #  created_at               :datetime         not null
 #  updated_at               :datetime         not null
@@ -19,6 +20,8 @@
 #  fk_rails_...  (user_id => users.id)
 #
 class HCB::OauthConnection < ApplicationRecord
+  has_paper_trail ignore: [:access_token_ciphertext, :refresh_token_ciphertext]
+
   belongs_to :user
   has_many :payment_accounts, dependent: :destroy
 

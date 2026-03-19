@@ -21,6 +21,8 @@
 #  fk_rails_...  (public_user_id => public_users.id)
 #
 class Public::APIKey < ApplicationRecord
+  has_paper_trail ignore: [:token_ciphertext, :token_bidx]
+
   include Hashid::Rails
   belongs_to :public_user, class_name: "Public::User"
 
