@@ -1,4 +1,4 @@
-module HcbConnectionCheck
+module HCBConnectionCheck
   extend ActiveSupport::Concern
 
   included do
