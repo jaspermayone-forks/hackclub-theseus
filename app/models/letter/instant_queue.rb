@@ -116,13 +116,22 @@ class Letter::InstantQueue < Letter::Queue
           begin
             indicium.buy!
           rescue => e
-            HCB::PaymentAccount.refund_to_organization!(
-              organization_id: hcb_payment_account.organization_id,
-              amount_cents: cost_cents,
-              name: "Refund for #{letter.public_id} #{indicium.public_id} #{Rails.application.routes.url_helpers.letter_path(letter)}",
-              memo: "[theseus] postage refund for a #{letter.processing_category}",
-            )
-            raise e
+            if indicium.raw_json_response.present?
+              # USPS already sold us postage — do NOT destroy or refund.
+              Sentry.capture_exception(e, level: :fatal, tags: { money: true, critical: true },
+                extra: { indicium_id: indicium.id, letter_id: letter.id, response: indicium.raw_json_response })
+              raise e
+            else
+              # API call never went through, safe to clean up.
+              HCB::PaymentAccount.refund_to_organization!(
+                organization_id: hcb_payment_account.organization_id,
+                amount_cents: cost_cents,
+                name: "Refund for #{letter.public_id} #{indicium.public_id} #{Rails.application.routes.url_helpers.letter_path(letter)}",
+                memo: "[theseus] postage refund for a #{letter.processing_category}",
+              )
+              indicium.destroy!
+              raise e
+            end
           end
           Rails.logger.info("Successfully bought indicium for letter #{letter.id}")
 

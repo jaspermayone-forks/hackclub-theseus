@@ -55,6 +55,10 @@ class LetterPolicy < ApplicationPolicy
     record_belongs_to_user || user_is_admin
   end
 
+  def clear_indicium?
+    user_is_admin
+  end
+
   def preview_template?
     Rails.env.development? && (record_belongs_to_user || user_is_admin)
   end

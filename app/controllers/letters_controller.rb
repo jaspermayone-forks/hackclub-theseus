@@ -160,6 +160,24 @@ class LettersController < ApplicationController
     end
   end
 
+  def clear_indicium
+    authorize @letter, :clear_indicium?
+    indicium = @letter.usps_indicium
+
+    if indicium.nil?
+      redirect_to @letter, alert: "No indicium to clear."
+      return
+    end
+
+    if indicium.raw_json_response.present?
+      redirect_to @letter, alert: "Cannot clear: this indicium was purchased from USPS. Manual resolution required."
+      return
+    end
+
+    indicium.destroy!
+    redirect_to @letter, notice: "Cleared orphaned indicium."
+  end
+
   # POST /letters/1/buy_indicia
   def buy_indicia
     authorize @letter, :buy_indicia?
@@ -217,13 +235,23 @@ class LettersController < ApplicationController
     begin
       indicium.buy!
     rescue => e
-      HCB::PaymentAccount.refund_to_organization!(
-        organization_id: hcb_payment_account.organization_id,
-        amount_cents: cost_cents,
-        name: "Refund for #{@letter.public_id} #{indicium.public_id} #{letter_path(@letter)}",
-        memo: "[theseus] postage refund for a #{@letter.processing_category}",
-      )
-      redirect_to @letter, alert: "Purchase failed: #{e.message}"
+      if indicium.raw_json_response.present?
+        # USPS already sold us postage — do NOT destroy or refund.
+        # The indicium is partially saved; leave it for manual resolution.
+        Sentry.capture_exception(e, level: :fatal, tags: { money: true, critical: true },
+          extra: { indicium_id: indicium.id, letter_id: @letter.id, response: indicium.raw_json_response })
+        redirect_to @letter, alert: "Postage was purchased but failed to save (#{e.message}). Do not retry — contact Nora."
+      else
+        # API call never went through, safe to clean up.
+        HCB::PaymentAccount.refund_to_organization!(
+          organization_id: hcb_payment_account.organization_id,
+          amount_cents: cost_cents,
+          name: "Refund for #{@letter.public_id} #{indicium.public_id} #{letter_path(@letter)}",
+          memo: "[theseus] postage refund for a #{@letter.processing_category}",
+        )
+        indicium.destroy!
+        redirect_to @letter, alert: "Purchase failed: #{e.message}"
+      end
       return
     end
 

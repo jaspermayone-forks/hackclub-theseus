@@ -58,7 +58,7 @@ class USPS::Indicium < ApplicationRecord
         non_machinable_indicators: letter.non_machinable? ? { isRigid: true } : nil,
       }
     else
-      flirted = true
+      self.flirted = true
       attrs = letter.flirt
 
       {
@@ -85,7 +85,7 @@ class USPS::Indicium < ApplicationRecord
     self.fees = meta[:fees]&.sum { |fee| fee[:price] }
     self.usps_sku = meta[:SKU]
 
-    save
+    save!
   end
 
   def cost = (postage || 0) + (fees || 0)

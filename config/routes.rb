@@ -461,6 +461,7 @@ Rails.application.routes.draw do
         post :mark_mailed
         post :mark_received
         post :clear_label
+        post :clear_indicium
         get :preview_template if Rails.env.development?
       end
     end

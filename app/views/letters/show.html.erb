@@ -108,6 +108,13 @@
                   <dd class="font-mono text-xs"><%= @letter.usps_indicium.public_id %></dd>
                 </div>
               </dl>
+              <% admin_tool(class_name: "mt-4") do %>
+                <% if @letter.usps_indicium.raw_json_response.nil? %>
+                  <%= button_to clear_indicium_letter_path(@letter), method: :post, class: "btn danger btn-small", data: { confirm: "This will destroy the orphaned indicium. Are you sure?" } do %>
+                    Clear Orphaned Indicium
+                  <% end %>
+                <% end %>
+              <% end %>
               <%= render 'admin_inspector', record: @letter.usps_indicium %>
             <% else %>
               <div class="text-yellow-700 mb-4">

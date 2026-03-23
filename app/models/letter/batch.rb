@@ -210,7 +210,15 @@ class Letter::Batch < Batch
           hcb_payment_account: hcb_payment_account,
           mailing_date: letter_mailing_date,
         )
-        indicium.buy!(payment_token)
+        begin
+          indicium.buy!(payment_token)
+        rescue => e
+          if indicium.raw_json_response.present?
+            Sentry.capture_exception(e, level: :fatal, tags: { money: true, critical: true },
+              extra: { letter_id: letter.id, batch_id: id, response: indicium.raw_json_response })
+          end
+          raise e
+        end
       end
     end
   end
