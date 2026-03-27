@@ -68,11 +68,8 @@ class Warehouse::UpdateInventoryLevelsJob < ApplicationJob
       Rails.logger.warn("#{costless_skus.length} enabled SKU(s) have no cost data at all: #{costless_skus.map(&:sku).join(', ')}")
     end
 
-    if zero_cost_items.any? || costless_skus.any?
-      Warehouse::InventoryAlertMailer.cost_alert(
-        zero_cost_items: zero_cost_items,
-        costless_skus: costless_skus,
-      ).deliver_later
+    if costless_skus.any?
+      Warehouse::InventoryAlertMailer.cost_alert(costless_skus:).deliver_later
     end
   end
 

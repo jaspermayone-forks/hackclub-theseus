@@ -92,23 +92,9 @@ RSpec.describe Warehouse::UpdateInventoryLevelsJob, type: :job do
         expect(sku.reload.average_po_cost).to be_nil
       end
 
-      it "sends an alert email with zero-cost items" do
+      it "does not send an alert email for historic zero-cost PO data" do
         described_class.perform_now
-
-        expect(Warehouse::InventoryAlertMailer).to have_received(:cost_alert) do |args|
-          expect(args[:zero_cost_items].length).to eq(1)
-          expect(args[:zero_cost_items].first[:sku]).to eq("Har/Bad/Zero")
-          expect(args[:zero_cost_items].first[:po_ids]).to eq([200])
-        end
-        expect(alert_mailer).to have_received(:deliver_later)
-      end
-
-      it "does not double-list the SKU in costless_skus" do
-        described_class.perform_now
-
-        expect(Warehouse::InventoryAlertMailer).to have_received(:cost_alert) do |args|
-          expect(args[:costless_skus]).to be_empty
-        end
+        expect(Warehouse::InventoryAlertMailer).not_to have_received(:cost_alert)
       end
     end
 
@@ -130,13 +116,9 @@ RSpec.describe Warehouse::UpdateInventoryLevelsJob, type: :job do
         expect(sku.reload.average_po_cost.to_f).to eq(8.0)
       end
 
-      it "still flags the zero-cost items in the alert" do
+      it "does not send an alert email when good PO data covers the SKU" do
         described_class.perform_now
-
-        expect(Warehouse::InventoryAlertMailer).to have_received(:cost_alert) do |args|
-          expect(args[:zero_cost_items].first[:sku]).to eq("Har/Bad/Zero")
-          expect(args[:zero_cost_items].first[:count]).to eq(1)
-        end
+        expect(Warehouse::InventoryAlertMailer).not_to have_received(:cost_alert)
       end
     end
   end
@@ -186,15 +168,9 @@ RSpec.describe Warehouse::UpdateInventoryLevelsJob, type: :job do
       ])
     end
 
-    it "does not flag as costless when override exists" do
+    it "does not send an alert email when override covers the SKU" do
       described_class.perform_now
-
-      expect(Warehouse::InventoryAlertMailer).to have_received(:cost_alert) do |args|
-        # should still flag the zero-cost PO item
-        expect(args[:zero_cost_items].first[:sku]).to eq("Har/Override")
-        # but not as costless since override covers it
-        expect(args[:costless_skus]).to be_empty
-      end
+      expect(Warehouse::InventoryAlertMailer).not_to have_received(:cost_alert)
     end
   end
 
