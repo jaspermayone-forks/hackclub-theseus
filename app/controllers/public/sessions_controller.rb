@@ -41,6 +41,31 @@ module Public
       end
     end
 
+    def hackclub_callback
+      auth = request.env["omniauth.auth"]
+
+      if auth.nil?
+        redirect_to public_login_path, alert: "authentication failed"
+        return
+      end
+
+      begin
+        @user = Public::User.from_hack_club_auth(auth)
+      rescue => e
+        Rails.logger.error "Error creating public user from HCA: #{e.message}"
+        event_id = Sentry.capture_exception(e)&.event_id
+        redirect_to public_login_path, alert: "error authenticating! (error: #{event_id})"
+        return
+      end
+
+      if @user&.persisted?
+        session[:public_user_id] = @user.id
+        redirect_to public_root_path, notice: "you're in!"
+      else
+        redirect_to public_login_path, alert: "something went wrong..."
+      end
+    end
+
     def destroy
       session[:public_user_id] = nil
       session[:public_impersonator_user_id] = nil

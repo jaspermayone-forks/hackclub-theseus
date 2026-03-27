@@ -585,6 +585,7 @@ Rails.application.routes.draw do
   get "/login" => "public/static_pages#login", as: :public_login
   post "/login" => "public/sessions#send_email", as: :send_email
   get "/login/:token", to: "public/sessions#login_code", as: :login_code
+  get "/auth/public_hackclub/callback", to: "public/sessions#hackclub_callback", as: :public_hackclub_callback
   delete "logout", to: "public/sessions#destroy", as: :public_logout
 
   scope :my do

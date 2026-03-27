@@ -391,6 +391,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_03_19_192245) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.boolean "opted_out_of_map", default: false
+    t.string "hca_id"
+    t.index ["hca_id"], name: "index_public_users_on_hca_id", unique: true
   end
 
   create_table "return_addresses", force: :cascade do |t|
