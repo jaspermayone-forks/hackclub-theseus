@@ -79,9 +79,10 @@
       </li>
       <% admin_tool do %>
         <li>
-          <details>
+          <details <%= 'open' if request.path.start_with?('/back_office/problems') %>>
             <summary>Admin</summary>
             <ul>
+              <%= nav_item(problems_path, "problems") %>
               <%= nav_item(good_job_path, "good job, #{current_user.username}!") %>
               <%= nav_item(admin_root_path, "admin panel?") %>
               <%= nav_item(blazer_path, "blaze it") %>

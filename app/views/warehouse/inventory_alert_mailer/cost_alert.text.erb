@@ -1,0 +1,30 @@
+hey nora!! just ran the inventory sync and found some cost problems you should probably know about.
+
+<% if @zero_cost_items.any? -%>
+these SKUs have POs in zenventory with $0 unit costs (which is almost certainly wrong):
+<ul>
+<% @zero_cost_items.each do |item| -%>
+  <li>
+    <%= item[:sku] %> — <%= item[:count] %> PO <%= "item".pluralize(item[:count]) %>, <%= item[:total_qty] %> total units at $0.00
+    <% item[:po_ids].each do |po_id| -%>
+      (<%= link_to "PO ##{po_id}", "https://app.zenventory.com/printing/printpurchaseorder.php?poid=#{po_id}" %>)
+    <% end -%>
+  </li>
+<% end -%>
+</ul>
+someone probably forgot to fill in the cost on the PO. the warehouse will get bad data until this is fixed in zenventory.
+<% end -%>
+
+<% if @costless_skus.any? -%>
+these enabled SKUs have NO cost data at all — no PO cost and no override. they will block any order that tries to ship them:
+<ul>
+<% @costless_skus.each do |sku| -%>
+  <li><%= link_to sku.sku, sku.zenventory_url || "#" %></li>
+<% end -%>
+</ul>
+<% end -%>
+
+i can't fix the zenventory PO data myself but i wanted to make sure you saw this before it became a problem. or, y'know, more of one.
+
+ok that's all!!
+- your favorite cronjob

@@ -573,6 +573,7 @@ Rails.application.routes.draw do
       end
     end
     root "static_pages#index"
+    get "/problems" => "static_pages#problems"
 
     delete "signout", to: "sessions#destroy", as: :signout
     get "/login" => "static_pages#login"

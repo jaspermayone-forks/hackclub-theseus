@@ -40,7 +40,7 @@ class Warehouse::PurchaseOrder < ApplicationRecord
   validates :supplier_name, presence: true
   validates :line_items, presence: true
 
-  has_zenventory_url "https://app.zenventory.com/purchasing/purchase-order/%s", :zenventory_id
+  has_zenventory_url "https://app.zenventory.com/printing/printpurchaseorder.php?poid=%s", :zenventory_id
 
   HUMANIZED_STATES = {
     draft: "Draft",

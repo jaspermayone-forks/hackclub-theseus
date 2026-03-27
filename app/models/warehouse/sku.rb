@@ -31,7 +31,9 @@ class Warehouse::SKU < ApplicationRecord
   scope :in_inventory, -> { where.not(in_stock: nil, inbound: nil) }
   scope :backordered, -> { where("in_stock < 0") }
 
-  def declared_unit_cost = declared_unit_cost_override || average_po_cost || 0.0
+  def declared_unit_cost
+    [declared_unit_cost_override, average_po_cost].find { |c| c&.positive? } || 0.0
+  end
 
   enum :category, {
     sticker: 0,

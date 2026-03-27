@@ -126,7 +126,18 @@ class Warehouse::Order < ApplicationRecord
     end
   end
 
+  class MissingCostsError < StandardError; end
+
   def dispatch!
+    zero_cost_skus = line_items.includes(:sku).select { |li| !li.sku.declared_unit_cost.positive? }
+    if zero_cost_skus.any?
+      sku_list = zero_cost_skus.map { |li| li.sku.sku }.join(", ")
+      raise MissingCostsError,
+        "STOP! These SKUs have no cost data and CANNOT be shipped: #{sku_list}. " \
+        "This order will send $0 line items to the warehouse. " \
+        "Please go find Nora right now."
+    end
+
     ActiveRecord::Base.transaction do
       raise AASM::InvalidTransition, "wrong state" unless may_mark_dispatched?
       order = Zenventory.create_customer_order(
@@ -164,6 +175,12 @@ class Warehouse::Order < ApplicationRecord
     end
     if canceled?
       errors.add(:base, "can't edit an order that's canceled!")
+      throw(:abort)
+    end
+    zero_cost_skus = line_items.reject(&:marked_for_destruction?).select { |li| !li.sku.declared_unit_cost.positive? }
+    if zero_cost_skus.any?
+      sku_list = zero_cost_skus.map { |li| li.sku.sku }.join(", ")
+      errors.add(:base, "STOP! These SKUs have no cost data: #{sku_list}. This update would send $0 line items to the warehouse. Please go find Nora right now.")
       throw(:abort)
     end
     begin

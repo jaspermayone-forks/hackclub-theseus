@@ -33,7 +33,11 @@
     <% end %>
     <p>
       <strong>Unit cost:</strong>
-      <%= number_to_currency sku.declared_unit_cost %>
+      <% if sku.declared_unit_cost.zero? %>
+        <span style="color: red; font-weight: bold;" title="This SKU has no cost data! Orders with this SKU cannot be dispatched.">⚠ $0.00 — no cost data!</span>
+      <% else %>
+        <%= number_to_currency sku.declared_unit_cost %>
+      <% end %>
     </p>
     <p>
       <strong>Customs description:</strong>
