@@ -41,8 +41,9 @@ class AIService
       # Filter out email and phone from fields to translate
       address_fields = fields - ["email", "phone_number"]
 
-      response = client.chat(
-        parameters: {
+      retried = false
+      response = begin
+        client.chat(parameters: {
           model: "gpt-4o-mini",
           response_format: {
             type: "json_schema",
@@ -84,8 +85,13 @@ class AIService
             PROMPT
           }],
           temperature: 0.8,
-        },
-      )
+        })
+      rescue Faraday::TooManyRequestsError, Faraday::ServerError => e
+        raise if retried
+        retried = true
+        sleep 1 + rand(2)
+        retry
+      end
 
       JSON.parse(response.dig("choices", 0, "message", "content"))
     end

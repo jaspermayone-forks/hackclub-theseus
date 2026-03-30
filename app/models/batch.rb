@@ -183,7 +183,6 @@ class Batch < ApplicationRecord
         end
       rescue => e
         Rails.logger.error("AI translation failed for batch #{id}: #{e.message}")
-        raise
       end
     end
 
