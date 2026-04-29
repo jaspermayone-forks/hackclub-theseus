@@ -21,7 +21,7 @@
           <% end %>
         </optgroup>
       <% end %>
-      
+
       <% envelope_templates = SnailMail::PhlexService.templates_for_size(:envelope) %>
       <% if envelope_templates.present? %>
         <optgroup label="#10 Envelopes">
@@ -36,7 +36,7 @@
   <div class="field">
     <%= form.label :letter_mailing_date, "Mailing Date" %>
     <div class="help-text">Select the date you plan to mail these letters.</div>
-    <%= form.date_field :letter_mailing_date, 
+    <%= form.date_field :letter_mailing_date,
       value: @batch.letter_mailing_date || @batch.default_mailing_date,
       min: Date.current,
       class: "form-control",
@@ -54,7 +54,7 @@
       { prompt: "Select a payment account" },
       { class: "form-control",
         required: false,
-        data: { 
+        data: {
           required_when: "indicia",
           us_postage_type: "batch[us_postage_type]",
           intl_postage_type: "batch[intl_postage_type]"
@@ -136,7 +136,7 @@
             </div>
             <div class="text-sm text-gray-500">
               <span id="cost_explanation">
-                <% 
+                <%
                   us_count = @batch.letters.joins(:address).where(addresses: { country: "US" }).count
                   intl_count = @batch.letters.joins(:address).where.not(addresses: { country: "US" }).count
                   us_stamps = us_count # Default to stamps for US
@@ -188,7 +188,7 @@
     function updatePaymentAccountRequired() {
       const usPostageType = document.querySelector('input[name="batch[us_postage_type]"]:checked').value;
       const intlPostageType = document.querySelector('input[name="batch[intl_postage_type]"]:checked').value;
-      
+
       const isIndiciaSelected = usPostageType === "indicia" || intlPostageType === "indicia";
       paymentAccountSelect.required = isIndiciaSelected;
     }
@@ -215,11 +215,11 @@
         document.getElementById('total_postage_cost').textContent = `$${data.total_cost.toFixed(2)}`;
         document.getElementById('us_cost_difference').textContent = `$${data.cost_difference.us.toFixed(2)}`;
         document.getElementById('intl_cost_difference').textContent = `$${data.cost_difference.intl.toFixed(2)}`;
-        
+
         const usDiffElement = document.getElementById('us_cost_difference');
         const intlDiffElement = document.getElementById('intl_cost_difference');
         const explanationElement = document.getElementById('cost_explanation');
-        
+
         // Update US cost difference styling
         if (data.cost_difference.us < 0) {
           usDiffElement.classList.remove('text-red-600');
@@ -228,7 +228,7 @@
           usDiffElement.classList.remove('text-green-600');
           usDiffElement.classList.add('text-red-600');
         }
-        
+
         // Update international cost difference styling
         if (data.cost_difference.intl < 0) {
           intlDiffElement.classList.remove('text-red-600');
@@ -237,24 +237,24 @@
           intlDiffElement.classList.remove('text-green-600');
           intlDiffElement.classList.add('text-red-600');
         }
-        
+
         // Update explanation text
         let explanation = [];
-        
+
         // Add stamp information if either option is stamps
         const usPostageType = document.querySelector('input[name="batch[us_postage_type]"]:checked').value;
         const intlPostageType = document.querySelector('input[name="batch[intl_postage_type]"]:checked').value;
-        
+
         if (usPostageType === "stamps" || intlPostageType === "stamps") {
           const usCount = usPostageType === "stamps" ? data.us_count || 0 : 0;
           const intlCount = intlPostageType === "stamps" ? data.intl_count || 0 : 0;
           const totalStamps = usCount + intlCount;
-          
+
           if (totalStamps > 0) {
             explanation.push(`You'll have to put stamps on ${totalStamps} envelope${totalStamps === 1 ? '' : 's'}`);
           }
         }
-        
+
         // Add cost difference information
         if (data.cost_difference.us < 0) {
           explanation.push('Savings from using metered postage for US mail');
@@ -265,7 +265,7 @@
         if (explanation.length === 0) {
           explanation.push('No cost difference');
         }
-        
+
         explanationElement.textContent = explanation.join('; ');
       });
     }

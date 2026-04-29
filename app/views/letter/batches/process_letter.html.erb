@@ -72,6 +72,13 @@
         </div>
         <% if @batch.letter_return_address&.us? %>
           <div style="margin-bottom: 1.5rem;">
+            <label>
+              <%= f.check_box :non_machinable, id: "batch_non_machinable", class: "form-checkbox" %>
+              Non-machinable surcharge
+            </label>
+            <small>Check this if the mail pieces are rigid, square, or otherwise non-machinable (e.g. envelopes containing circuit boards, pins, or other bulky items).</small>
+          </div>
+          <div style="margin-bottom: 1.5rem;">
             <h4 class="text-sm font-medium mb-2">US Mail</h4>
             <div class="space-y-2">
               <div class="form-check">
@@ -168,6 +175,8 @@
     function updatePostageCosts() {
       const usPostageType = getSelectedPostageType(usPostageRadios);
       const intlPostageType = getSelectedPostageType(intlPostageRadios);
+      const nonMachinableCheckbox = document.getElementById('batch_non_machinable');
+      const nonMachinable = nonMachinableCheckbox ? nonMachinableCheckbox.checked : false;
 
       fetch(`<%= update_costs_letter_batch_path(@batch) %>`, {
         method: 'POST',
@@ -177,7 +186,8 @@
         },
         body: JSON.stringify({
           us_postage_type: usPostageType,
-          intl_postage_type: intlPostageType
+          intl_postage_type: intlPostageType,
+          non_machinable: nonMachinable
         })
       })
       .then(response => response.json())
@@ -212,6 +222,8 @@
 
     usPostageRadios.forEach(radio => radio.addEventListener('change', updatePostageCosts));
     intlPostageRadios.forEach(radio => radio.addEventListener('change', updatePostageCosts));
+    const nonMachinableCheckbox = document.getElementById('batch_non_machinable');
+    if (nonMachinableCheckbox) nonMachinableCheckbox.addEventListener('change', updatePostageCosts);
     updatePostageCosts();
   });
 </script>
