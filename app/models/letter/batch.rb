@@ -66,7 +66,7 @@ class Letter::Batch < Batch
   attribute :user_facing_title, :string
   attribute :letter_return_address_name, :string
   attribute :letter_queue_id, :integer
-  attr_accessor :template, :template_cycle
+  attr_accessor :template, :template_cycle, :non_machinable
   attribute :letter_mailing_date, :date
 
   validates :letter_height, :letter_width, :letter_weight, presence: true, numericality: { greater_than: 0 }
@@ -223,9 +223,11 @@ class Letter::Batch < Batch
     end
   end
 
-  def postage_cost
+  def postage_cost(non_machinable: nil)
     # Preload associations to avoid N+1 queries
     letters.includes(:address, :usps_indicium).sum do |letter|
+      effective_non_machinable = non_machinable.nil? ? letter.non_machinable : non_machinable
+
       if letter.postage_type == "indicia"
         if letter.usps_indicium.present?
           # Use actual indicia price if indicia are bought
@@ -235,7 +237,7 @@ class Letter::Batch < Batch
           USPS::PricingEngine.metered_price(
             letter.processing_category,
             letter.weight,
-            letter.non_machinable
+            effective_non_machinable
           )
         else
           # For international mail without bought indicia, use FLIRT-ed price
@@ -252,7 +254,7 @@ class Letter::Batch < Batch
           USPS::PricingEngine.domestic_stamp_price(
             letter.processing_category,
             letter.weight,
-            letter.non_machinable
+            effective_non_machinable
           )
         else
           USPS::PricingEngine.fcmi_price(
@@ -267,9 +269,11 @@ class Letter::Batch < Batch
 
   alias_method :total_cost, :postage_cost
 
-  def postage_cost_difference(us_postage_type: nil, intl_postage_type: nil)
+  def postage_cost_difference(us_postage_type: nil, intl_postage_type: nil, non_machinable: nil)
     # Preload associations to avoid N+1 queries
     letters.includes(:address, :usps_indicium).each_with_object({ us: 0, intl: 0 }) do |letter, differences|
+      effective_non_machinable = non_machinable.nil? ? letter.non_machinable : non_machinable
+
       # Determine what postage type this letter would use
       effective_postage_type = if letter.address.us?
           us_postage_type || letter.postage_type
@@ -286,7 +290,7 @@ class Letter::Batch < Batch
         retail_price = USPS::PricingEngine.domestic_stamp_price(
           letter.processing_category,
           letter.weight,
-          letter.non_machinable
+          effective_non_machinable
         )
 
         # Indicia price is metered_price
@@ -296,7 +300,7 @@ class Letter::Batch < Batch
             USPS::PricingEngine.metered_price(
               letter.processing_category,
               letter.weight,
-              letter.non_machinable
+              effective_non_machinable
             )
           end
 

@@ -93,6 +93,9 @@ class Letter::BatchesController < BaseBatchesController
       @batch.letter_mailing_date = letter_batch_params[:letter_mailing_date]
       @batch.save! # Save the mailing date before processing
 
+      non_machinable = ActiveModel::Type::Boolean.new.cast(letter_batch_params[:non_machinable])
+      @batch.letters.update_all(non_machinable: non_machinable)
+
       # Only require payment account if indicia is selected
       if letter_batch_params[:us_postage_type] == "indicia" || letter_batch_params[:intl_postage_type] == "indicia"
         authorize @batch, :process_batch_with_indicia?, policy_class: Letter::BatchPolicy
@@ -167,13 +170,16 @@ class Letter::BatchesController < BaseBatchesController
     us_letters = @batch.letters.joins(:address).where(addresses: { country: "US" })
     intl_letters = @batch.letters.joins(:address).where.not(addresses: { country: "US" })
 
+    non_machinable = ActiveModel::Type::Boolean.new.cast(params[:non_machinable])
+
     cost_differences = @batch.postage_cost_difference(
       us_postage_type: params[:us_postage_type],
       intl_postage_type: params[:intl_postage_type],
+      non_machinable: non_machinable,
     )
 
     render json: {
-      total_cost: @batch.postage_cost,
+      total_cost: @batch.postage_cost(non_machinable: non_machinable),
       cost_difference: {
         us: cost_differences[:us],
         intl: cost_differences[:intl],
@@ -235,6 +241,7 @@ class Letter::BatchesController < BaseBatchesController
       :include_qr_code,
       :print_immediately,
       :template_cycle,
+      :non_machinable,
       tags: [],
     )
   end
