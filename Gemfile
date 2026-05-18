@@ -163,7 +163,7 @@ gem "parallel", "~> 1.26"
 gem "sentry-ruby"
 gem "sentry-rails"
 
-gem "rmagick", "~> 5.3"
+gem "rmagick", "~> 6.1"
 
 gem "jb", "~> 0.8.2"
 
