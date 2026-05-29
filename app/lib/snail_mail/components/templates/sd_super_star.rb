@@ -36,7 +36,7 @@ module SnailMail
 
             Many thanks & keep hacking!
 
-            <3 ~#{reviewer} @ Mission Control
+            <3 ~#{reviewer} @ Hack Club HQ
 
 
 
