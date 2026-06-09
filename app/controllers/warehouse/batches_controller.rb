@@ -89,7 +89,7 @@ class Warehouse::BatchesController < BaseBatchesController
     if @batch.process!
       redirect_to warehouse_batch_path(@batch), notice: "Batch was successfully processed."
     else
-      render :process_form, status: :unprocessable_entity
+      render :process_warehouse, status: :unprocessable_entity
     end
   end
 
