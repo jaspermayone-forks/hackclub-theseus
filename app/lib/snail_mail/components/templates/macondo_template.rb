@@ -20,7 +20,7 @@ module SnailMail
           # MACONDO header banner (watercolor stripes + straw hat + hibiscus)
           image(
             image_path("macondo/title.png"),
-            at: [ 0, 262 ],
+            at: [ 0, 248 ],
             width: 432,
           )
 
