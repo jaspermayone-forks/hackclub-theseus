@@ -36,7 +36,7 @@ module SnailMail
 
           render_destination_address(
             108, 172, 214, 72,
-            size: 12, valign: :center, align: :left, dbg_stroke: true
+            size: 12, valign: :center, align: :left
           )
 
           render_qr_code(8, 168, 50)
