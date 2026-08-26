@@ -67,6 +67,7 @@ class Warehouse::Order < ApplicationRecord
 
   validates :line_items, presence: true
   validates :recipient_email, presence: true
+  validates :address, international_contact: { email: :recipient_email }
   validate :can_mail_parcels_to_country
 
   after_create :set_hc_id

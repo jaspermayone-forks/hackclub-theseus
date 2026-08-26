@@ -81,6 +81,7 @@ class Warehouse::BatchesController < BaseBatchesController
 
   def process_form
     authorize @batch, :process_form?
+    @batch.preflight
     render :process_warehouse
   end
 

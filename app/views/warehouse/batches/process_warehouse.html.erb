@@ -10,6 +10,21 @@
     </div>
   </div>
 
+  <% if @batch.errors.any? %>
+    <div class="mb-4">
+      <%= render layout: "shared/banner", locals: { color: "alert" } do %>
+        <div>
+          <b>these rows can't be shipped yet:</b>
+          <ul class="list-disc list-inside">
+            <% @batch.errors.each do |error| %>
+              <li class="text-sm"><%= error.message %></li>
+            <% end %>
+          </ul>
+        </div>
+      <% end %>
+    </div>
+  <% end %>
+
   <div class="card mb-4">
     <div class="card-header">
       <h2 class="text-sm font-medium mb-0">Batch Summary</h2>
@@ -52,10 +67,14 @@
 
   <div class="card">
     <div class="card-body">
-      <%= button_to process_warehouse_batch_path(@batch), 
+      <%= button_to process_warehouse_batch_path(@batch),
                     method: :post,
+                    disabled: @batch.errors.any?,
                     class: "btn btn-primary w-full" do %>
         <%= check_icon %>Process Batch
+      <% end %>
+      <% if @batch.errors.any? %>
+        <div class="form-hint">Fix the addresses above, then come back.</div>
       <% end %>
     </div>
   </div>
