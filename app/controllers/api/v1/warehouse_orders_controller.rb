@@ -27,6 +27,8 @@ module API
       def from_template
         @template = Warehouse::Template.find_by_public_id!(params[:template_id])
         address = parse_address_from_params(permit_address_params)
+        return if address.nil? # it already rendered the error explaining why
+
         @warehouse_order = Warehouse::Order.from_template(@template, warehouse_order_params.merge(address:, user: current_user))
         authorize @warehouse_order
 
@@ -53,6 +55,8 @@ module API
 
       def create
         address = parse_address_from_params(permit_address_params)
+        return if address.nil? # it already rendered the error explaining why
+
         @warehouse_order = Warehouse::Order.new(warehouse_order_params.merge(address:, user: current_user, source_tag: SourceTag.first))
         authorize @warehouse_order
         address.save!
