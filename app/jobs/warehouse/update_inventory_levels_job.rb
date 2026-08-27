@@ -59,7 +59,7 @@ class Warehouse::UpdateInventoryLevelsJob < ApplicationJob
         zenventory_id: inv_item.dig(:item, :id)
       )
 
-      if i.enabled? && !i.declared_unit_cost.positive? && !zero_cost_sku_names.include?(sku)
+      if i.enabled? && !i.declared_unit_cost.positive? && !zero_cost_sku_names.include?(sku) && (i.in_stock.present? || i.inbound.present?)
         costless_skus << i
       end
     end
@@ -91,7 +91,7 @@ class Warehouse::UpdateInventoryLevelsJob < ApplicationJob
 
     new_sku_codes.each do |sku_code|
       sku = Warehouse::SKU.find_by(sku: sku_code)
-      next unless sku&.enabled? && !sku.declared_unit_cost.positive?
+      next unless sku&.enabled? && !sku.declared_unit_cost.positive? && (sku.in_stock.present? || sku.inbound.present?)
       costless_skus << sku unless zero_cost_sku_names.include?(sku_code)
     end
 
