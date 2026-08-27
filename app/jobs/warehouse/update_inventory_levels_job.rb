@@ -10,6 +10,11 @@ class Warehouse::UpdateInventoryLevelsJob < ApplicationJob
 
     Rails.logger.info("achievement get! fetched #{inventory.length} inventory items ^_^")
 
+    default_unit_costs = Zenventory
+                            .get_items
+                            .index_by { |i| i[:sku] }
+                            .transform_values { |i| nilify(i[:unitCost]) }
+
     Rails.logger.info("crunching unit cost numbers...")
     purchase_orders = Zenventory.get_purchase_orders
     all_po_items = purchase_orders.flat_map { |po| po[:items].map { |item| item.merge(po_id: po[:id]) } }
@@ -47,7 +52,7 @@ class Warehouse::UpdateInventoryLevelsJob < ApplicationJob
     Warehouse::SKU.all.each do |i|
       sku = i.sku
       inv_item = inventory[sku]
-      unit_cost = unit_costs[sku]
+      unit_cost = unit_costs[sku] || default_unit_costs[sku]
       unless inv_item
         Rails.logger.error("no item for #{sku} in warehouse inventory!")
         next
@@ -78,7 +83,7 @@ class Warehouse::UpdateInventoryLevelsJob < ApplicationJob
         s.zenventory_id = inv_item.dig(:item, :id)
         s.in_stock = nilify(inv_item[:sellable])
         s.inbound = nilify(inv_item[:inbound])
-        s.average_po_cost = unit_costs[sku_code]
+        s.average_po_cost = unit_costs[sku_code] || default_unit_costs[sku_code]
       end
       new_sku_codes << sku_code if sku.previously_new_record?
     rescue => e
