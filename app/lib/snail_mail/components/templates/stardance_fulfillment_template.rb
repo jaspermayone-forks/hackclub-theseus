@@ -49,13 +49,13 @@ module SnailMail
             55,
             size: 12,
             valign: :center,
-            align: :center
+            align: :left
           )
 
           # Render postal elements
           render_imb(240, 24, 183)
           render_qr_code(5, 120, 50)
-          render_letter_id(10, 19, 10)
+          render_letter_id(10, 212, 10)
 
           render_postage
         end
