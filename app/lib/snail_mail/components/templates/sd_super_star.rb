@@ -4,7 +4,7 @@ module SnailMail
   module Components
     module Templates
       class SdSuperStar < HalfLetterComponent
-        IMAGES = %w(wizard.png hotdogcat.jpg magic_smoke.png)
+        IMAGES = %w(stardance/wizard_orpheus.png hotdogcat.jpg magic_smoke.png)
 
         def self.abstract? = false
 
@@ -46,9 +46,21 @@ module SnailMail
           EOM
 
           font "gohu" do text_box text, at: [15, bounds.top-15], width: bounds.right - 200 - 20, size: 14 end
+
+          if (listing_url = meta["listing_url"]).present?
+            SnailMail::QRCodeGenerator.generate_qr_code(self, listing_url, 460, 75, 50)
+            font("gohu", size: 7) do
+              text_box("view project", at: [455, 20], width: 60, align: :center)
+            end
+          end
         end
 
         def render_back
+          img_path = image_path("stardance/astronomical.png")
+          img_info = Prawn::Images::PNG.new(File.binread(img_path))
+          target_w = bounds.right + 5
+          rendered_h = img_info.height * (target_w / img_info.width.to_f)
+          image(img_path, at: [-2.5, rendered_h], width: target_w)
           super
         end
       end
