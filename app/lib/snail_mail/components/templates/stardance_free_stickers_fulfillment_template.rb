@@ -24,7 +24,7 @@ module SnailMail
           )
 
           render_return_address(10, 278, 260, 70, size: 8)
-          render_destination_address(165, 140, 230, 71, size: 14, valign: :bottom, align: :left)
+          render_destination_address(150, 136, 260, 67, size: 14, valign: :bottom, align: :left)
 
           render_imb(240, 24, 183)
           render_qr_code(5, 100, 50)
@@ -38,7 +38,7 @@ module SnailMail
 
         def render_preview_bounds
           stroke_preview_bounds(10, 278, 260, 70, label: "return address")
-          stroke_preview_bounds(165, 140, 230, 71, label: "destination address")
+          stroke_preview_bounds(150, 136, 260, 67, label: "destination address")
           stroke_preview_bounds(240, 24, 183, 12, label: "IMb barcode")
           stroke_preview_bounds(5, 115, 50, 50, label: "QR code")
           stroke_preview_bounds(10, 65, 10, 60, label: "letter ID")
