@@ -49,6 +49,7 @@ class Letter::BatchesController < BaseBatchesController
           height: @batch.letter_height,
           width: @batch.letter_width,
           weight: @batch.letter_weight,
+          processing_category: @batch.letter_processing_category,
           mailing_date: @batch.letter_mailing_date,
           usps_mailer_id_id: @batch.letter_mailer_id_id,
           return_address_id: @batch.letter_return_address_id,
