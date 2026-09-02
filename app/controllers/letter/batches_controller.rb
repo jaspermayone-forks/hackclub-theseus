@@ -207,7 +207,7 @@ class Letter::BatchesController < BaseBatchesController
   private
 
   def batch_params
-    params.require(:letter_batch).permit(
+    permitted = params.require(:letter_batch).permit(
       :csv,
       :letter_template_id,
       :user_facing_title,
@@ -221,10 +221,11 @@ class Letter::BatchesController < BaseBatchesController
       :letter_processing_category,
       tags: [],
     )
+    normalize_processing_category(permitted)
   end
 
   def letter_batch_params
-    params.require(:batch).permit(
+    permitted = params.require(:batch).permit(
       :csv,
       :letter_height,
       :letter_width,
@@ -245,6 +246,14 @@ class Letter::BatchesController < BaseBatchesController
       :non_machinable,
       tags: [],
     )
+    normalize_processing_category(permitted)
+  end
+
+  def normalize_processing_category(permitted)
+    if permitted[:letter_processing_category].present?
+      permitted[:letter_processing_category] = Letter.processing_categories.fetch(permitted[:letter_processing_category], permitted[:letter_processing_category])
+    end
+    permitted
   end
 
   def validate_postage_types
