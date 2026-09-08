@@ -112,14 +112,19 @@ class Warehouse::BatchesController < BaseBatchesController
 
     if @batch.update!(field_mapping: inverted_mapping)
       begin
-        @batch.run_map!
+        skipped_countries = @batch.run_map!
       rescue StandardError => e
         Rails.logger.warn(e)
         event_id = Sentry.capture_exception(e)&.event_id
         redirect_to warehouse_batch_path(@batch), flash: { alert: "Error mapping fields! #{e.message} (error: #{event_id})" }
         return
       end
-      redirect_to process_confirm_warehouse_batch_path(@batch), notice: "Field mapping saved. Please review and process your batch."
+      notice = "Field mapping saved. Please review and process your batch."
+      if skipped_countries.present?
+        names = skipped_countries.map { |cc| ISO3166::Country[cc]&.common_name || cc }.to_sentence
+        notice += " Addresses in #{names} were skipped — USPS does not currently deliver there."
+      end
+      redirect_to process_confirm_warehouse_batch_path(@batch), notice: notice
     else
       flash.now[:error] = "Failed to save field mapping. #{@batch.errors.full_messages.join(", ")}"
       render :map_fields, status: :unprocessable_entity

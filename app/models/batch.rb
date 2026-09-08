@@ -112,6 +112,8 @@ class Batch < ApplicationRecord
   def run_map!
     rows = CSV.parse(csv_data, headers: true, converters: [->(s) { s&.strip&.delete(GREMLINS).presence }])
 
+    restricted_countries = Concurrent::Set.new
+
     # Phase 1: Build address attributes in parallel with correlation tokens
     # Parallel.map returns results in input order and avoids shared mutable state
     items = Parallel.map(rows.each_with_index, in_threads: 8) do |row, i|
@@ -120,6 +122,12 @@ class Batch < ApplicationRecord
 
         address_attrs = build_address_attributes(row)
         next unless address_attrs
+
+        cc = address_attrs[:country]
+        if usps_restricted?(cc)
+          restricted_countries << cc
+          next
+        end
 
         # UUID token correlates this row with its address after bulk insert
         { token: SecureRandom.uuid, row: row, attrs: address_attrs }
@@ -156,6 +164,8 @@ class Batch < ApplicationRecord
 
     mark_fields_mapped
     save!
+
+    restricted_countries.to_a
   end
 
   private
@@ -180,7 +190,6 @@ class Batch < ApplicationRecord
             translated[:first_name] = row[field_mapping["first_name"]]
             translated[:last_name] = row[field_mapping["last_name"]]
             translated[:country] = translated_country.alpha2
-            return nil if usps_restricted?(translated[:country])
             return translated
           end
         end
@@ -202,7 +211,6 @@ class Batch < ApplicationRecord
       end
 
     resolved_country = country&.alpha2 || csv_country&.upcase
-    return nil if usps_restricted?(resolved_country)
 
     {
       first_name: row[field_mapping["first_name"]],
