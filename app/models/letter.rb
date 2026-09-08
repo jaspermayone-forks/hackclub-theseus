@@ -270,7 +270,7 @@ class Letter < ApplicationRecord
           # For international mail without bought indicia, use FLIRT-ed price
           flirted = flirt
           if flirted
-            PricingEngine.metered_price(
+            USPS::PricingEngine.metered_price(
               flirted[:processing_category],
               flirted[:weight],
               flirted[:non_machinable]
