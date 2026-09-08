@@ -48,5 +48,7 @@ module Theseus
 
     # Use dynamic error pages so we can show Sentry event IDs
     config.exceptions_app = routes
+
+    config.country_restrictions = config_for(:country_restrictions)
   end
 end

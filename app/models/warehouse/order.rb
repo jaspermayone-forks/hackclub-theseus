@@ -360,7 +360,12 @@ class Warehouse::Order < ApplicationRecord
   end
 
   def can_mail_parcels_to_country
-    errors.add(:base, :cant_mail, message: "We can't currently ship to #{ISO3166::Country[address.country]&.common_name || address.country} from the warehouse.") if %i[IR PS CU KP RU].include? address.country&.to_sym
+    return if address&.country.blank?
+    restrictions = Rails.configuration.country_restrictions
+    blocked = restrictions.usps_restricted + restrictions.agh_restricted
+    if address.country.to_s.in?(blocked)
+      errors.add(:base, :cant_mail, message: "We can't currently ship to #{ISO3166::Country[address.country]&.common_name || address.country} from the warehouse.")
+    end
   end
 
   def inherit_batch_tags

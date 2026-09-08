@@ -180,6 +180,7 @@ class Batch < ApplicationRecord
             translated[:first_name] = row[field_mapping["first_name"]]
             translated[:last_name] = row[field_mapping["last_name"]]
             translated[:country] = translated_country.alpha2
+            return nil if usps_restricted?(translated[:country])
             return translated
           end
         end
@@ -200,6 +201,9 @@ class Batch < ApplicationRecord
         state
       end
 
+    resolved_country = country&.alpha2 || csv_country&.upcase
+    return nil if usps_restricted?(resolved_country)
+
     {
       first_name: row[field_mapping["first_name"]],
       last_name: row[field_mapping["last_name"]],
@@ -208,7 +212,7 @@ class Batch < ApplicationRecord
       city: row[field_mapping["city"]],
       state: normalized_state,
       postal_code: postal_code,
-      country: country&.alpha2 || csv_country&.upcase, # Use FCN alpha2 if available, otherwise original country code
+      country: resolved_country,
       phone_number: row[field_mapping["phone_number"]],
       email: row[field_mapping["email"]],
     }
@@ -217,6 +221,12 @@ class Batch < ApplicationRecord
   def build_mapping(row, address)
     # Base class just returns the address
     address
+  end
+
+  def usps_restricted?(country_code)
+    return false if country_code.blank?
+    restricted = Rails.configuration.country_restrictions.usps_restricted
+    country_code.to_s.in?(restricted)
   end
 
   def update_associated_tags
