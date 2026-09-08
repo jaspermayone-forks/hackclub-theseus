@@ -142,6 +142,8 @@ class Letter < ApplicationRecord
       address.country
     )
     USPS::FLIRTEngine.closest_us_price(desired_price)
+  rescue ArgumentError
+    nil
   end
 
   def self.find_by_imb_sn(imb_sn, mailer_id = nil)
@@ -267,11 +269,15 @@ class Letter < ApplicationRecord
         else
           # For international mail without bought indicia, use FLIRT-ed price
           flirted = flirt
-          USPS::PricingEngine.metered_price(
-            flirted[:processing_category],
-            flirted[:weight],
-            flirted[:non_machinable]
-          )
+          if flirted
+            PricingEngine.metered_price(
+              flirted[:processing_category],
+              flirted[:weight],
+              flirted[:non_machinable]
+            )
+          else
+            USPS::PricingEngine.fcmi_price(processing_category, weight, address.country, non_machinable)
+          end
         end
       when "stamps"
         if %i(queued).include?(aasm.current_state)
