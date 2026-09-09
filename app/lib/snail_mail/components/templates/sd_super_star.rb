@@ -4,7 +4,7 @@ module SnailMail
   module Components
     module Templates
       class SdSuperStar < HalfLetterComponent
-        IMAGES = %w(stardance/wizard_orpheus.png hotdogcat.jpg magic_smoke.png)
+        IMAGE = "stardance/starlings.png"
 
         def self.abstract? = false
 
@@ -18,7 +18,7 @@ module SnailMail
 
         def render_front
           image(
-            image_path(IMAGES.sample),
+            image_path(IMAGE),
             at: [410, bounds.bottom + 200],
             valign: :top,
             width: 150
