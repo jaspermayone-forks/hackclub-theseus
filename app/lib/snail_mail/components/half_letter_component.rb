@@ -25,7 +25,7 @@ module SnailMail
       def render_back
         render_postage
         render_imb(bounds.right - 217, 25, 207)
-        render_return_address(5, bounds.top - 5, 190, 90, size: 8, font: address_font)
+        render_return_address(15, bounds.top - 15, 190, 90, size: 8, font: address_font)
         render_destination_address(
           (bounds.right/2)-256/2,
           260,
@@ -33,9 +33,9 @@ module SnailMail
           107,
           size: 18, valign: :center, align: :left, font: address_font
         )
-        render_qr_code(5, 200, 65)
+        render_qr_code(15, 200, 65)
         font(address_font, size: 8) do
-          text_box(letter.public_id, at: [5, bounds.top - 100], width: 100, overflow: :shrink_to_fit)
+          text_box(letter.public_id, at: [15, bounds.top - 110], width: 100, overflow: :shrink_to_fit)
         end
       end
     end
