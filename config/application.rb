@@ -1,4 +1,5 @@
 require_relative "boot"
+require_relative "../app/middleware/maintenance_mode"
 
 require "rails"
 require "active_model/railtie"
@@ -50,5 +51,7 @@ module Theseus
     config.exceptions_app = routes
 
     config.country_restrictions = config_for(:country_restrictions)
+
+    config.middleware.insert_before 0, MaintenanceMode
   end
 end
