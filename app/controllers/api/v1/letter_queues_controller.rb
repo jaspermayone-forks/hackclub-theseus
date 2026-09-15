@@ -3,8 +3,8 @@ module API
     class LetterQueuesController < ApplicationController
       include AddressParameterParsing
 
-      before_action :set_letter_queue, only: [:show, :create_letter]
-      before_action :set_instant_letter_queue, only: [:create_instant_letter, :queued]
+      before_action :set_letter_queue, only: [ :show, :create_letter ]
+      before_action :set_instant_letter_queue, only: [ :create_instant_letter, :queued ]
 
       rescue_from ActiveRecord::RecordNotFound do |e|
         render json: { error: "Queue not found" }, status: :not_found
@@ -13,7 +13,7 @@ module API
       rescue_from ActiveRecord::RecordInvalid do |e|
         render json: {
           error: "Validation failed",
-          details: e.record.errors.full_messages,
+          details: e.record.errors.full_messages
         }, status: :unprocessable_entity
       end
 
@@ -25,11 +25,9 @@ module API
       # but it's not, so we're just going to poll
       # i'm not braining well enough to do it right anytime soon
       def queued
-        # authorize @letter_queue, policy_class: Letter::QueuePolicy
         raise Pundit::NotAuthorizedError unless current_token&.pii?
 
-        return render json: { error: "no" } unless @letter_queue.is_a?(Letter::InstantQueue)
-        @expand = [:label]
+        @expand = [ :label ]
 
         @letters = @letter_queue.letters.pending
       end
@@ -46,8 +44,6 @@ module API
         )
         render :create_letter, status: :created
 
-        #   rescue ActiveRecord::RecordInvalid => e
-        # render json: { error: e.record.errors.full_messages }, status: :unprocessable_entity
       end
 
       def create_instant_letter
@@ -63,15 +59,35 @@ module API
         @expand << :label
         render :create_letter, status: :created
       rescue ActiveRecord::RecordNotFound
-        return render json: { error: "Queue not found" }, status: :not_found
+        render json: { error: "Queue not found" }, status: :not_found
       rescue ActiveRecord::RecordInvalid => e
-        return render json: { error: e.record.errors.full_messages.join(", ") }, status: :unprocessable_entity
+        render json: { error: e.record.errors.full_messages.join(", ") }, status: :unprocessable_entity
+      rescue Letter::InstantQueue::PurchaseUncertain => e
+        # 409, not 500: the request is finished, but whether postage was bought
+        # is unknown. Name the letter so a human can go and look.
+        render json: {
+          error: "postage_unresolved",
+          letter_id: e.letter.public_id,
+          message: e.message
+        }, status: :conflict
+      rescue USPS::IndiciumPurchase::PurchaseFailed => e
+        render json: {
+          error: "postage_purchase_failed",
+          refunded: e.refunded?,
+          message: e.message
+        }, status: :bad_gateway
+      rescue Billing::Rejected, Billing::InFlight => e
+        render json: { error: "payment_failed", message: e.message }, status: :payment_required
       end
 
       private
 
+      # Batch queues are owner-or-admin: Letter::QueuePolicy#create_letter? only
+      # asks for a logged-in user, so the scoping is what keeps someone else's
+      # queue from taking your letters. (Instant queues are open on purpose and
+      # go through set_instant_letter_queue instead.)
       def set_letter_queue
-        @letter_queue = Letter::Queue.find_by!(slug: params[:id])
+        @letter_queue = policy_scope(Letter::Queue).find_by!(slug: params[:id])
         # grossest hack on the planet, nora why are you like this
         raise ActiveRecord::RecordNotFound if @letter_queue.is_a?(Letter::InstantQueue)
       end
@@ -95,7 +111,7 @@ module API
             :city,
             :state,
             :postal_code,
-            :country,
+            :country
           ],
         )
       end

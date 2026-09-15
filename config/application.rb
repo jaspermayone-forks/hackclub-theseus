@@ -18,11 +18,13 @@ require "rails/test_unit/railtie"
 # you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
 
+
 module Theseus
   class Application < Rails::Application
     # Initialize configuration defaults for originally generated Rails version.
     config.assets.enabled = false
-    config.load_defaults 8.0
+    config.load_defaults 8.1
+    config.action_view.form_with_generates_remote_forms = false
     config.active_job.queue_adapter = :good_job
     # Please, add to the `ignore` list any other `lib` subdirectories that do
     # not contain `.rb` files, or that should not be reloaded or eager loaded.
@@ -50,6 +52,7 @@ module Theseus
     # Use dynamic error pages so we can show Sentry event IDs
     config.exceptions_app = routes
 
+    config.flipper_features = config_for(:flipper_features)
     config.country_restrictions = config_for(:country_restrictions)
 
     config.middleware.insert_before 0, MaintenanceMode

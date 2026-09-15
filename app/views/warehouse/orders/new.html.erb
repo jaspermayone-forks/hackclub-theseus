@@ -1,11 +1,25 @@
-<% content_for :title, "New order" %>
+<% content_for :title, "New Order" %>
 
-<h1>New order</h1>
+<div class="toolbar mb-0 no-border-bottom">
+  <div class="flex-row">
+    <a href="<%= warehouse_orders_path %>" class="text-muted no-underline">← Orders</a>
+    <strong class="text-title">New Order</strong>
+  </div>
+</div>
 
-<%= render "form", warehouse_order: @warehouse_order %>
+<div class="show-layout">
+  <div class="show-main">
+    <%= render "form", warehouse_order: @warehouse_order %>
+  </div>
 
-<br>
-
-<div>
-  <%= link_to "Back to orders", warehouse_orders_path %>
+  <div class="show-sidebar">
+    <section>
+      <strong>Info</strong>
+      <hr>
+      <div class="mt-half text-muted note-paragraphs">
+        <p>Orders are sent to the warehouse for fulfillment. The recipient receives a shipping notification when it ships.</p>
+        <p>Items must be in inventory to be included.</p>
+      </div>
+    </section>
+  </div>
 </div>

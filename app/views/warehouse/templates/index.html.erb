@@ -1,29 +1,50 @@
-<% content_for :title, "Templates" %>
+<% content_for :title, "Order Templates" %>
 
-<h1>Order Templates</h1>
-
-<div class="actions">
-  <%= create_button new_warehouse_template_path, "create template" %>
+<div class="toolbar">
+  <div class="flex-row">
+    <strong class="text-title">Order Templates</strong>
+    <%= render Components::Shared::Jumpcode.new(path: warehouse_templates_path) %>
+  </div>
+  <div class="flex-row">
+    <span class="text-muted">Reusable order configurations</span>
+  </div>
+  <span class="spacer"></span>
+  <a href="<%= new_warehouse_template_path %>" class="btn-success btn-sm">+ New Template</a>
 </div>
 
-<h2>Your templates:</h2>
-<div id="your_templates">
-  <% current_user&.warehouse_templates&.each do |warehouse_template| %>
-    <%= render warehouse_template %>
-    <p>
-      <%= link_to "view this template", warehouse_template %>
-    </p>
-  <% end.presence || "none yet!" %>
-</div>
+<% if current_user&.warehouse_templates&.any? %>
+  <section class="mb-1">
+    <strong>Your Templates</strong>
+    <hr>
+    <% current_user.warehouse_templates.each_with_index do |template, i| %>
+      <% if i > 0 %><hr><% end %>
+      <a href="<%= warehouse_template_path(template) %>" class="link-reset template-row">
+        <span class="fw-medium flex-1"><%= template.name %></span>
+        <span class="text-muted"><%= template.line_items.count %> items</span>
+        <% if template.public %>
+          <span class="badge badge-info">Shared</span>
+        <% end %>
+        <%= render Components::Shared::PublicId.new(value: template.public_id) %>
+      </a>
+    <% end %>
+  </section>
+<% end %>
 
-<h2>Public templates:</h2>
-<div id="public_templates">
-  <% Warehouse::Template.shared.each do |warehouse_template| %>
-    <%= render warehouse_template %>
-    <p>
-      <%= link_to "view this template", warehouse_template %>
-    </p>
-  <% end.presence || "none yet!" %>
-</div>
-
-<%= link_to "create template!", new_warehouse_template_path %>
+<section>
+  <strong>Public Templates</strong>
+  <hr>
+  <% if Warehouse::Template.shared.any? %>
+    <% Warehouse::Template.shared.each_with_index do |template, i| %>
+      <% if i > 0 %><hr><% end %>
+      <a href="<%= warehouse_template_path(template) %>" class="link-reset template-row">
+        <span class="fw-medium flex-1"><%= template.name %></span>
+        <span class="text-muted"><%= template.line_items.count %> items</span>
+        <span class="text-muted">by <%= template.user&.username || "unknown" %></span>
+      </a>
+    <% end %>
+  <% else %>
+    <div class="text-muted empty-state">
+      No public templates yet. Shared templates from other users will appear here.
+    </div>
+  <% end %>
+</section>

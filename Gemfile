@@ -1,7 +1,9 @@
 source "https://rubygems.org"
 
 # Bundle edge Rails instead: gem "rails", github: "rails/rails", branch: "main"
-gem "rails", "~> 8.0.5", ">= 8.0.5.1"
+gem "rails", "~> 8.1"
+# pin until rails/rails#58601 lands in a release (json 3.0 breaks ActiveSupport::JSON.decode)
+gem "json", "< 3"
 # The modern asset pipeline for Rails [https://github.com/rails/propshaft]
 gem "propshaft"
 # Use postgresql as the database for Active Record
@@ -13,14 +15,12 @@ gem "puma", ">= 5.0"
 gem "turbo-rails"
 # Hotwire's modest JavaScript framework [https://stimulus.hotwired.dev]
 gem "stimulus-rails"
-# Build JSON APIs with ease [https://github.com/rails/jbuilder]
-gem "jbuilder", "~> 2.13"
 
 # Use Active Model has_secure_password [https://guides.rubyonrails.org/active_model_basics.html#securepassword]
 # gem "bcrypt", "~> 3.1.7"
 
 # Windows does not include zoneinfo files, so bundle the tzinfo-data gem
-gem "tzinfo-data", platforms: %i[ windows jruby ]
+gem "tzinfo-data", platforms: %i[ mingw mswin jruby ]
 
 # Use the database-backed adapters for Rails.cache, Active Job, and Action Cable
 gem "solid_cache"
@@ -41,7 +41,7 @@ gem "thruster", require: false
 
 group :development, :test do
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
-  gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
+  gem "debug", platforms: %i[ mri mingw mswin ], require: "debug/prelude"
 
   # Static analysis for security vulnerabilities [https://brakemanscanner.org/]
   gem "brakeman", require: false
@@ -76,7 +76,6 @@ gem "aasm", "~> 5.5"
 
 gem "norairrecord", "~> 0.4.0"
 
-gem "filterrific", "~> 5.2"
 
 gem "hashid-rails", "~> 1.4"
 
@@ -98,12 +97,10 @@ gem "pundit", "~> 2.5"
 
 
 
-gem "select2-rails", "~> 4.0"
 
 gem "jquery-rails", "~> 4.6"
 
 
-gem "country-select", "~> 1.2"
 
 gem "countries", "~> 8.0"
 
@@ -113,9 +110,6 @@ gem "awesome_print", "~> 1.9"
 
 gem "cocoon", "~> 1.2"
 
-gem "administrate", "~> 0.19.0"
-
-gem "slim-rails", "~> 3.7"
 
 group :development do
   gem "letter_opener_web", "~> 3.0"
@@ -150,7 +144,6 @@ gem "redis", "~> 5.4"
 
 gem "valid_email2", "~> 7.0"
 
-gem "sssecrets", "~> 1.0"
 
 gem "lockbox", "~> 2.0"
 
@@ -177,8 +170,20 @@ gem "xsv", "~> 1.3"
 
 gem "phlex-pdf", "~> 0.1.2"
 
-gem "paper_trail", "~> 16.0"
+gem "paper_trail", "~> 17.0"
+gem "sssecrets"
 
+# fork = upstream PR #106 (maxp glyph mapping fix), unreleased as of 1.8.0; drop when ttfunk > 1.8.0 ships
 gem "ttfunk", github: "24c02/ttfunk"
 
 gem "hcbv4", "~> 0.2"
+
+gem "pg_search", "~> 2.3"
+
+gem "redcarpet", "~> 3.6"
+
+gem "flipper", "~> 1.4"
+gem "flipper-ui", "~> 1.4"
+gem "flipper-active_record", "~> 1.4"
+
+gem "toolchest", "~> 0.4"

@@ -1,18 +1,43 @@
 class Warehouse::OrdersController < ApplicationController
-  before_action :set_warehouse_order, except: [:new, :create, :index]
+  include BillingProfileResolvable
+  before_action :set_warehouse_order, except: [ :new, :create, :index ]
   # GET /warehouse/orders or /warehouse/orders.json
   def index
     authorize Warehouse::Order
 
     # Get all orders with their associations using policy scope
-    @all_orders = policy_scope(Warehouse::Order).includes(:batch, :address, :source_tag, :user)
+    @all_orders = policy_scope(Warehouse::Order).includes(:batch, :origin_batch, :address, :user, line_items: :sku)
 
-    # Filter by batched/unbatched based on view parameter
-    if params[:view] == "batched"
-      @warehouse_orders = @all_orders.in_batch
+    # Filter by origin (how the order was created)
+    orders = if params[:origin].present? && %w[manual bulk_upload api].include?(params[:origin])
+               @all_orders.where(created_via: params[:origin])
     else
-      @warehouse_orders = @all_orders.not_in_batch.page(params[:page]).per(20)
+               @all_orders
     end
+
+    # Filter by state
+    orders = orders.where(aasm_state: params[:state]) if params[:state].present?
+
+    # Filter by user (admin only)
+    orders = orders.where(user_id: params[:user_id]) if params[:user_id].present? && current_user&.is_admin?
+
+    # Search
+    orders = orders.search(params[:search]) if params[:search].present?
+
+    @warehouse_orders = orders.order(created_at: :desc).page(params[:page]).per(25)
+
+    # Get users for the picker (admin only)
+    @users = current_user&.is_admin? ? User.where(id: @all_orders.reorder(nil).select(:user_id).distinct).order(:email) : []
+
+    render Views::Warehouse::Orders::Index.new(
+      warehouse_orders: @warehouse_orders,
+      all_orders: @all_orders,
+      origin: params[:origin],
+      search: params[:search],
+      state: params[:state],
+      user_id: params[:user_id],
+      users: @users
+    )
   end
 
   # GET /warehouse/orders/1 or /warehouse/orders/1.json
@@ -51,10 +76,16 @@ class Warehouse::OrdersController < ApplicationController
 
   # POST /warehouse/orders or /warehouse/orders.json
   def create
+    resolved_profile = find_billing_profile(params.dig(:warehouse_order, :billing_profile_id))
+    if params.dig(:warehouse_order, :billing_profile_id).present? && resolved_profile.nil?
+      redirect_to new_warehouse_order_path, alert: "Billing profile not found or not yours."
+      return
+    end
+
     @warehouse_order = Warehouse::Order.new(
-      warehouse_order_params.merge(
+      warehouse_order_params.except(:billing_profile_id).merge(
         user: current_user,
-        source_tag: SourceTag.web_tag,
+        billing_profile: resolved_profile,
       )
     )
 
@@ -74,8 +105,19 @@ class Warehouse::OrdersController < ApplicationController
   # PATCH/PUT /warehouse/orders/1 or /warehouse/orders/1.json
   def update
     authorize @warehouse_order
+
+    update_params = warehouse_order_params
+    if update_params[:billing_profile_id].present?
+      resolved = find_billing_profile(update_params.delete(:billing_profile_id))
+      unless resolved
+        redirect_to edit_warehouse_order_path(@warehouse_order), alert: "Billing profile not found or not yours."
+        return
+      end
+      @warehouse_order.billing_profile = resolved
+    end
+
     respond_to do |format|
-      if @warehouse_order.update(warehouse_order_params)
+      if @warehouse_order.update(update_params)
         format.html { redirect_to @warehouse_order, notice: "Order was successfully updated." }
         format.json { render :show, status: :ok, location: @warehouse_order }
       else
@@ -100,12 +142,16 @@ class Warehouse::OrdersController < ApplicationController
       @warehouse_order.cancel!(reason)
     rescue Zenventory::ZenventoryError => e
       redirect_to @warehouse_order, alert: "couldn't cancel order! zenventory said: #{e.message}"
-    rescue AASM::InvalidTransition => e
+      return
+    rescue AASM::InvalidTransition
       redirect_to @warehouse_order, alert: "couldn't cancel order! wrong state?"
+      return
     end
+
+    redirect_to @warehouse_order, flash: { success: "order canceled." }
   end
 
-  # # DELETE /warehouse/orders/1 or /warehouse/orders/1.json
+  # DELETE /warehouse/orders/1
   def destroy
     authorize @warehouse_order
     @warehouse_order.destroy!
@@ -131,9 +177,11 @@ class Warehouse::OrdersController < ApplicationController
       :internal_notes,
       :recipient_email,
       :notify_on_dispatch,
+      :billing_profile_id,
       tags: [],
-      line_items_attributes: [:id, :sku_id, :quantity, :_destroy],
+      line_items_attributes: [ :id, :sku_id, :quantity, :_destroy ],
       address_attributes: %i[first_name last_name line_1 line_2 city state postal_code country phone_number email],
-    ).compact_blank
+    )
   end
+
 end

@@ -1,22 +1,33 @@
 class APIKeysController < ApplicationController
-  before_action :set_api_key, except: [:index, :new, :create]
+  include BillingProfileResolvable
+  before_action :set_api_key, except: [ :index, :new, :create ]
 
   def index
     authorize APIKey
     @api_keys = policy_scope(APIKey)
+    render Views::APIKeys::Index.new(api_keys: @api_keys)
   end
 
   def new
     authorize APIKey
     @api_key = APIKey.new(user: current_user)
+    render Views::APIKeys::New.new(api_key: @api_key)
   end
 
   def create
-    permitted_params = [:name, :pii, :qz_only]
+    permitted_params = [ :name, :pii, :qz_only, :billing_profile_id ]
     permitted_params << :may_impersonate if current_user.admin?
 
-    @api_key = APIKey.new(params.require(:api_key).permit(*permitted_params).merge(user: current_user))
+    key_params = params.require(:api_key).permit(*permitted_params)
 
+    billing_profile = find_billing_profile(key_params[:billing_profile_id])
+    if key_params[:billing_profile_id].present? && billing_profile.nil?
+      flash[:error] = "Billing profile not found or not yours."
+      redirect_to new_api_key_path
+      return
+    end
+
+    @api_key = APIKey.new(key_params.except(:billing_profile_id).merge(user: current_user, billing_profile: billing_profile))
     authorize @api_key
 
     if @api_key.save
@@ -29,10 +40,12 @@ class APIKeysController < ApplicationController
 
   def show
     authorize @api_key
+    render Views::APIKeys::Show.new(api_key: @api_key)
   end
 
   def revoke_confirm
     authorize @api_key
+    render Views::APIKeys::RevokeConfirm.new(api_key: @api_key)
   end
 
   def revoke

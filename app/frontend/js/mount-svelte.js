@@ -1,0 +1,49 @@
+import { mount } from 'svelte';
+import LetterAttributesPicker from '../components/LetterAttributesPicker.svelte';
+import MailScanner from '../components/MailScanner.svelte';
+import CommandPalette from '../components/CommandPalette.svelte';
+import HintsModal from '../components/HintsModal.svelte';
+import KeyboardShortcuts from '../components/KeyboardShortcuts.svelte';
+
+const components = {
+  'letter-attributes-picker': LetterAttributesPicker,
+  'mail-scanner': MailScanner,
+  'command-palette': CommandPalette,
+  'hints-modal': HintsModal,
+  'keyboard-shortcuts': KeyboardShortcuts,
+};
+
+export function mountSvelteComponents() {
+  document.querySelectorAll('[data-svelte-component]:not([data-svelte-mounted])').forEach((target) => {
+    const componentName = target.dataset.svelteComponent;
+    const Component = components[componentName];
+
+    if (!Component) {
+      console.warn(`Unknown Svelte component: ${componentName}`);
+      return;
+    }
+
+    target.dataset.svelteMounted = 'true';
+
+    const props = {};
+    Object.keys(target.dataset).forEach((key) => {
+      if (key === 'svelteComponent' || key === 'svelteMounted') return;
+
+      let value = target.dataset[key];
+      try {
+        value = JSON.parse(value);
+      } catch (e) {}
+
+      props[key] = value;
+    });
+
+    mount(Component, { target, props });
+  });
+}
+
+// Auto-mount on DOMContentLoaded and Turbo navigation
+if (typeof document !== 'undefined') {
+  document.addEventListener('DOMContentLoaded', mountSvelteComponents);
+  document.addEventListener('turbo:load', mountSvelteComponents);
+  document.addEventListener('turbo:render', mountSvelteComponents);
+}

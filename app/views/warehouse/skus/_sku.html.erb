@@ -1,55 +1,29 @@
-<article id="<%= dom_id sku %>" class="card warehouse-sku-card">
-  <div class="sku-header">
-    <div class="sku-id">
-      <%= link_to sku.sku, sku %>
-        <% if sku.in_stock&.> 0 %>
-          <span class="badge success float-right">in stock</span>
-        <% elsif sku.in_stock&.< 0 %>
-          <% if sku.inbound&.>= sku.in_stock.abs %>
-            <span class="badge warning float-right">backordered (more otw)</span>
-          <% else %>
-            <span class="badge error float-right">backordered (!)</span>
-          <% end %>
-        <% else %>
-          <span class="badge pending float-right">not in inventory</span>
-        <% end %>
-    </div>
-
-  </div>
-  <div class="card-content">
-    <p>
-      <strong>Name:</strong>
-      <%= sku.name %>
-    </p>
-    <p>
-      <strong>In stock:</strong>
-      <%= sku.in_stock %>
-    </p>
-    <% if sku.description.present? %>
-      <p>
-        <strong>Description:</strong>
-        <span class="sku-description"><%= sku.description %></span>
-      </p>
+<tr id="<%= dom_id sku %>">
+  <td class="cell-pad">
+    <a href="<%= warehouse_sku_path(sku) %>" class="link-bold"><code><%= sku.sku %></code></a>
+    <span class="row-tag"><%= sku.name %></span>
+  </td>
+  <td class="num-cell"><%= sku.in_stock || "—" %></td>
+  <td class="num-cell">
+    <% if sku.declared_unit_cost.zero? %>
+      <span class="text-danger" title="No cost data">⚠ $0.00</span>
+    <% else %>
+      <%= number_to_currency(sku.declared_unit_cost) %>
     <% end %>
-    <p>
-      <strong>Unit cost:</strong>
-      <% if sku.declared_unit_cost.zero? %>
-        <span style="color: red; font-weight: bold;" title="This SKU has no cost data! Orders with this SKU cannot be dispatched.">⚠ $0.00 — no cost data!</span>
+  </td>
+  <td class="cell-pad">
+    <% if sku.in_stock.to_i > 0 %>
+      <span class="badge badge-success">In stock</span>
+    <% elsif sku.in_stock.to_i < 0 %>
+      <% if sku.inbound.to_i >= sku.in_stock.abs %>
+        <span class="badge badge-warning">Backordered</span>
       <% else %>
-        <%= number_to_currency sku.declared_unit_cost %>
+        <span class="badge badge-danger">Backordered (!)</span>
       <% end %>
-    </p>
-    <p>
-      <strong>Customs description:</strong>
-      <span class="sku-customs"><%= sku.customs_description %></span>
-    </p>
-    <p>
-      <strong>AI enabled:</strong>
-      <%= render_checkbox sku.ai_enabled %>
-    </p>
-    <p>
-      <strong>Enabled:</strong>
-      <%= render_checkbox sku.enabled  %>
-    </p>
-  </div>
-</article>
+    <% else %>
+      <span class="badge">No inventory</span>
+    <% end %>
+    <% if sku.ai_enabled %><span class="badge badge-info">AI</span><% end %>
+    <% unless sku.enabled %><span class="badge">Disabled</span><% end %>
+  </td>
+</tr>

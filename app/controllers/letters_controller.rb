@@ -1,19 +1,30 @@
 class LettersController < ApplicationController
-  before_action :set_letter, except: %i[ index new create ]
+  include BillingProfileResolvable
+  before_action :set_letter, except: %i[ index new create scanner ]
 
   # GET /letters
   def index
     authorize Letter
-    # Get all letters with their associations using policy scope
-    @all_letters = policy_scope(Letter).includes(:batch, :address, :usps_mailer_id, :label_attachment, :label_blob)
+
+    all_letters = policy_scope(Letter)
+      .includes(:batch, :address, :usps_mailer_id, :user, :label_attachment, :label_blob)
       .where.not(aasm_state: "queued")
-      .order(created_at: :desc)
 
-    # Get unbatched letters with pagination
-    @unbatched_letters = @all_letters.not_in_batch.page(params[:page]).per(20)
+    letters = all_letters
+    letters = letters.where(aasm_state: params[:status]) if params[:status].present?
+    letters = letters.where(created_via: params[:origin]) if params[:origin].present? && %w[manual bulk_upload queue api].include?(params[:origin])
+    letters = letters.where(user_id: params[:user_id]) if params[:user_id].present? && current_user&.is_admin?
+    letters = letters.search(params[:search]) if params[:search].present?
 
-    # Get batched letters grouped by batch
-    @batched_letters = @all_letters.in_batch.group_by(&:batch)
+    render Views::Letters::Index.new(
+      letters: letters.order(created_at: :desc).page(params[:page]).per(25),
+      all_letters: all_letters,
+      search: params[:search],
+      status: params[:status],
+      origin: params[:origin],
+      user_id: params[:user_id],
+      users: current_user&.is_admin? ? User.where(id: all_letters.reorder(nil).select(:user_id).distinct).order(:email) : []
+    )
   end
 
   # GET /letters/1
@@ -28,19 +39,26 @@ class LettersController < ApplicationController
     @letter = Letter.new
     @letter.return_address = current_user.home_return_address || ReturnAddress.first
     @letter.build_address
+    render Views::Letters::New.new(letter: @letter)
   end
 
   # GET /letters/1/edit
   def edit
     authorize @letter
-    # If letter doesn't have a return address already, don't build one
-    # Let the user select one from the dropdown
+    render Views::Letters::Edit.new(letter: @letter)
   end
 
   # POST /letters
   def create
     @letter = Letter.new(letter_params.merge(user: current_user))
     authorize @letter
+
+    if @letter.return_address_id.present? && !available_return_addresses.exists?(id: @letter.return_address_id)
+      @letter.errors.add(:return_address, "isn't available to you")
+      @letter.build_address if @letter.address.nil?
+      render Views::Letters::New.new(letter: @letter), status: :unprocessable_entity
+      return
+    end
 
     # Set postage type to international_origin if return address is not US
     if @letter.return_address && @letter.return_address.country != "US"
@@ -50,7 +68,8 @@ class LettersController < ApplicationController
     if @letter.save
       redirect_to @letter, notice: "Letter was successfully created."
     else
-      render :new, status: :unprocessable_entity
+      @letter.build_address if @letter.address.nil?
+      render Views::Letters::New.new(letter: @letter), status: :unprocessable_entity
     end
   end
 
@@ -58,14 +77,21 @@ class LettersController < ApplicationController
   def update
     authorize @letter
 
-    if @letter.batch_id.present? && params[:letter][:postage_type].present?
+    # The form always posts a checked postage radio, so only a real change is
+    # worth refusing.
+    postage_type = params[:letter][:postage_type]
+    if @letter.batch_id.present? && postage_type.present? && postage_type.to_s != @letter.postage_type.to_s
       redirect_to @letter, alert: "Cannot change postage type for a letter that is part of a batch."
       return
     end
 
     # Set postage type to international_origin if return address is not US
     if params[:letter][:return_address_id].present?
-      return_address = ReturnAddress.find(params[:letter][:return_address_id])
+      return_address = available_return_addresses.find_by(id: params[:letter][:return_address_id])
+      if return_address.nil?
+        redirect_to @letter, alert: "That return address isn't available to you."
+        return
+      end
       if return_address.country != "US"
         params[:letter][:postage_type] = "international_origin"
       end
@@ -74,7 +100,7 @@ class LettersController < ApplicationController
     if @letter.update(letter_params)
       redirect_to @letter, notice: "Letter was successfully updated."
     else
-      render :edit, status: :unprocessable_entity
+      render Views::Letters::Edit.new(letter: @letter), status: :unprocessable_entity
     end
   end
 
@@ -105,7 +131,6 @@ class LettersController < ApplicationController
         redirect_to @letter, alert: "Failed to generate label: #{@letter.errors.full_messages.join(", ")}"
       end
     rescue => e
-      raise
       redirect_to @letter, alert: "Error generating label: #{e.message}"
     end
   end
@@ -131,11 +156,44 @@ class LettersController < ApplicationController
   # POST /letters/1/mark_mailed
   def mark_mailed
     authorize @letter, :mark_mailed?
+
+    # Check if already mailed BEFORE attempting transition
+    if @letter.been_mailed?
+      respond_to do |format|
+        format.html { redirect_to @letter, alert: "Letter already marked as mailed." }
+        format.json {
+          render json: {
+            success: false,
+            error: "already_mailed",
+            letter: letter_json(@letter)
+          }, status: :unprocessable_entity
+        }
+      end
+      return
+    end
+
     if @letter.mark_mailed!
       User::UpdateTasksJob.perform_later(current_user)
-      redirect_to @letter, notice: "Letter has been marked as mailed."
+      respond_to do |format|
+        format.html { redirect_to @letter, notice: "Letter marked as mailed." }
+        format.json {
+          render json: {
+            success: true,
+            letter: letter_json(@letter)
+          }
+        }
+      end
     else
-      redirect_to @letter, alert: "Could not mark letter as mailed: #{@letter.errors.full_messages.join(", ")}"
+      respond_to do |format|
+        format.html { redirect_to @letter, alert: "Could not mark letter as mailed." }
+        format.json {
+          render json: {
+            success: false,
+            error: "validation_failed",
+            errors: @letter.errors.full_messages
+          }, status: :unprocessable_entity
+        }
+      end
     end
   end
 
@@ -146,6 +204,21 @@ class LettersController < ApplicationController
       redirect_to @letter, notice: "Letter has been marked as received."
     else
       redirect_to @letter, alert: "Could not mark letter as received: #{@letter.errors.full_messages.join(", ")}"
+    end
+  end
+
+  # POST /letters/1/undo_mark_mailed
+  def undo_mark_mailed
+    authorize @letter, :mark_mailed?
+    @letter.undo_mailed!
+    respond_to do |format|
+      format.html { redirect_to @letter, notice: "Letter unmarked as mailed." }
+      format.json { render json: { success: true, letter: letter_json(@letter) } }
+    end
+  rescue AASM::InvalidTransition
+    respond_to do |format|
+      format.html { redirect_to @letter, alert: "Letter not marked as mailed." }
+      format.json { render json: { success: false, error: "not_mailed" }, status: :unprocessable_entity }
     end
   end
 
@@ -191,71 +264,37 @@ class LettersController < ApplicationController
       return
     end
 
-    if @letter.usps_indicium.present?
-      redirect_to @letter, alert: "Indicia already purchased for this letter."
-      return
-    end
-
     usps_payment_account = USPS::PaymentAccount.find_by(id: params[:usps_payment_account_id])
     if usps_payment_account.nil?
       redirect_to @letter, alert: "Please select a valid USPS payment account."
       return
     end
 
-    hcb_payment_account = current_user.hcb_payment_accounts.find_by(id: params[:hcb_payment_account_id])
-
-    if hcb_payment_account.blank?
-      redirect_to @letter, alert: "You must select an HCB payment account to purchase indicia."
+    billing_profile = find_billing_profile(params[:hcb_payment_account_id])
+    if billing_profile.nil?
+      redirect_to @letter, alert: "You must select a billing profile to purchase indicia."
       return
     end
 
-    indicium = USPS::Indicium.create!(
-      letter: @letter,
-      payment_account: usps_payment_account,
-      hcb_payment_account: hcb_payment_account,
-    )
-    cost_cents = (@letter.postage * 100).ceil
+    USPS::IndiciumPurchase.new(letter: @letter, usps_account: usps_payment_account, billing_profile: billing_profile).call
+    @letter.update_columns(indicia_state: "purchased")
+    redirect_to @letter, notice: "Indicia purchased successfully (charged to #{billing_profile.organization_name})."
+  rescue USPS::IndiciumPurchase::AlreadyPurchased => e
+    redirect_to @letter, alert: e.message
+  rescue Billing::InFlight, Billing::Unconfirmed => e
+    redirect_to @letter, alert: "#{e.message}. Please wait for it to be confirmed before trying again."
+  rescue Billing::Rejected => e
+    redirect_to @letter, alert: "HCB declined the charge: #{e.message}"
+  rescue USPS::IndiciumPurchase::Unrecorded => e
+    redirect_to @letter, alert: "Postage was purchased but failed to save (#{e.cause_error.message}). Do not retry — contact Nora."
+  rescue USPS::IndiciumPurchase::PurchaseFailed => e
+    status = e.refunded? ? "refunded" : "refund #{e.credit&.state || 'failed'} — check billing"
+    redirect_to @letter, alert: "Purchase failed (#{status}): #{e.cause_error.message}"
+  end
 
-    transfer_service = HCB::TransferService.new(
-      hcb_payment_account: hcb_payment_account,
-      amount_cents: cost_cents,
-      name: "Postage for #{@letter.public_id} #{indicium.public_id} #{letter_path(@letter)}",
-      memo: "[theseus] postage for a #{@letter.processing_category}",
-    )
-    transfer = transfer_service.call
-
-    unless transfer
-      indicium.destroy!
-      redirect_to @letter, alert: transfer_service.errors.join(", ")
-      return
-    end
-
-    indicium.update!(hcb_transfer_id: transfer.id)
-
-    begin
-      indicium.buy!
-    rescue => e
-      if indicium.raw_json_response.present?
-        # USPS already sold us postage — do NOT destroy or refund.
-        # The indicium is partially saved; leave it for manual resolution.
-        Sentry.capture_exception(e, level: :fatal, tags: { money: true, critical: true },
-          extra: { indicium_id: indicium.id, letter_id: @letter.id, response: indicium.raw_json_response })
-        redirect_to @letter, alert: "Postage was purchased but failed to save (#{e.message}). Do not retry — contact Nora."
-      else
-        # API call never went through, safe to clean up.
-        HCB::PaymentAccount.refund_to_organization!(
-          organization_id: hcb_payment_account.organization_id,
-          amount_cents: cost_cents,
-          name: "Refund for #{@letter.public_id} #{indicium.public_id} #{letter_path(@letter)}",
-          memo: "[theseus] postage refund for a #{@letter.processing_category}",
-        )
-        indicium.destroy!
-        redirect_to @letter, alert: "Purchase failed: #{e.message}"
-      end
-      return
-    end
-
-    redirect_to @letter, notice: "Indicia purchased successfully (charged to #{hcb_payment_account.organization_name})."
+  # GET /letters/scanner
+  def scanner
+    authorize Letter, :index?
   end
 
   private
@@ -263,6 +302,23 @@ class LettersController < ApplicationController
   # Use callbacks to share common setup or constraints between actions.
   def set_letter
     @letter = Letter.find_by_public_id!(params[:id])
+  end
+
+  # The picker only ever offers these, so anything else is someone else's
+  # private sender.
+  def available_return_addresses
+    return ReturnAddress.all if current_user&.is_admin?
+    ReturnAddress.shared.or(ReturnAddress.owned_by(current_user))
+  end
+
+  def letter_json(letter)
+    {
+      public_id: letter.public_id,
+      display_name: letter.display_name || letter.user_facing_title,
+      mailed_at: letter.mailed_at&.iso8601,
+      recipient: letter.address&.name_line,
+      aasm_state: letter.aasm_state
+    }
   end
 
   # Only allow a list of trusted parameters through.
@@ -291,7 +347,7 @@ class LettersController < ApplicationController
         :city,
         :state,
         :postal_code,
-        :country,
+        :country
       ],
       return_address_attributes: [
         :id,
@@ -301,7 +357,7 @@ class LettersController < ApplicationController
         :city,
         :state,
         :postal_code,
-        :country,
+        :country
       ],
       tags: [],
     )

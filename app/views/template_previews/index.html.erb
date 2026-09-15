@@ -1,22 +1,30 @@
 <% content_for :title, "Template Previews" %>
 
-<div class="max-w-4xl mx-auto p-8">
-  <h1 class="text-3xl font-bold mb-8">Letter Template Previews</h1>
-  
-  <div class="grid gap-4">
-    <% @templates.each do |template| %>
-      <div class="border rounded-lg p-4 bg-white shadow-sm">
-        <h2 class="text-xl font-semibold mb-2"><%= template.to_s.split("::").last.humanize %></h2>
-        <p class="text-gray-600 mb-4 font-mono text-sm"><%= template %></p>
-        <div class="flex gap-3">
-          <%= link_to "Preview PDF", template_preview_path(template), 
-              target: "_blank", 
-              class: "bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded" %>
-          <%= link_to "Preview with QR", template_preview_path(template, qr: true), 
-              target: "_blank", 
-              class: "bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded" %>
-        </div>
-      </div>
-    <% end %>
-  </div>
+<div class="toolbar">
+  <strong class="text-title">Letter Template Previews</strong>
+  <span class="spacer"></span>
 </div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Template</th>
+      <th>Class</th>
+      <th class="text-right">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @templates.each do |template| %>
+      <tr>
+        <td><a href="<%= template_preview_path(template) %>" target="_blank" class="link-medium"><%= template.to_s.split("::").last.humanize %></a></td>
+        <td><code class="text-muted"><%= template %></code></td>
+        <td class="text-right">
+          <div class="actions-end">
+            <a href="<%= template_preview_path(template) %>" target="_blank">⎘ PDF</a>
+            <a href="<%= template_preview_path(template, qr: true) %>" target="_blank">⎘ With QR</a>
+          </div>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>

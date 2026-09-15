@@ -2,8 +2,10 @@ module API
   module V1
     class WarehouseOrdersController < ApplicationController
       include AddressParameterParsing
+      include BillingProfileResolvable
 
-      before_action :set_warehouse_order, only: [:show]
+      before_action :set_warehouse_order, only: [ :show ]
+      before_action :replay_idempotent_order, only: [ :create, :from_template ]
 
       rescue_from ActiveRecord::RecordNotFound do |e|
         render json: { error: "Warehouse order not found" }, status: :not_found
@@ -12,7 +14,7 @@ module API
       rescue_from ActiveRecord::RecordInvalid do |e|
         render json: {
           error: "Validation failed",
-          details: e.record.errors.full_messages,
+          details: e.record.errors.full_messages
         }, status: :unprocessable_entity
       end
 
@@ -25,11 +27,19 @@ module API
       end
 
       def from_template
-        @template = Warehouse::Template.find_by_public_id!(params[:template_id])
-        address = parse_address_from_params(permit_address_params)
-        return if address.nil? # it already rendered the error explaining why
+        @template = Warehouse::Template.find_by_public_id(params[:template_id])
+        unless @template && (@template.public? || @template.user == current_user || current_user.admin?)
+          return render json: { error: "Template not found" }, status: :not_found
+        end
+        billing_profile = resolve_billing_profile
+        return if performed?
 
-        @warehouse_order = Warehouse::Order.from_template(@template, warehouse_order_params.merge(address:, user: current_user))
+        address = parse_address_from_params(permit_address_params)
+        return if address.nil?
+
+        @warehouse_order = Warehouse::Order.from_template(@template, warehouse_order_params.merge(
+          address:, user: current_user, billing_profile:,
+        ))
         authorize @warehouse_order
 
         # Build additional line items from contents if provided
@@ -41,10 +51,15 @@ module API
       end
 
       def create
-        address = parse_address_from_params(permit_address_params)
-        return if address.nil? # it already rendered the error explaining why
+        billing_profile = resolve_billing_profile
+        return if performed?
 
-        @warehouse_order = Warehouse::Order.new(warehouse_order_params.merge(address:, user: current_user, source_tag: SourceTag.first))
+        address = parse_address_from_params(permit_address_params)
+        return if address.nil?
+
+        @warehouse_order = Warehouse::Order.new(warehouse_order_params.merge(
+          address:, user: current_user, billing_profile:,
+        ))
         authorize @warehouse_order
 
         return unless build_line_items(contents_params)
@@ -89,6 +104,20 @@ module API
         @warehouse_order = policy_scope(Warehouse::Order).find_by!(hc_id: params[:id])
       end
 
+      # The order is committed before dispatch! talks to Zenventory, so a failed
+      # dispatch leaves a draft holding the idempotency key. Rolling it back
+      # would let a retry create a second Zenventory order for a POST that may
+      # have landed; hand back the draft the first call already made instead.
+      def replay_idempotent_order
+        key = params[:warehouse_order].try(:[], :idempotency_key)
+        return if key.blank?
+
+        @warehouse_order = Warehouse::Order.find_by(user: current_user, idempotency_key: key)
+        return if @warehouse_order.nil?
+
+        render :show, status: :ok
+      end
+
       def warehouse_order_params
         params.require(:warehouse_order).permit(
           :recipient_email,
@@ -103,13 +132,41 @@ module API
         end
       end
 
+      # Per-request billing_profile_id overrides the API key's default
+      def resolve_billing_profile
+        profile = if params[:billing_profile_id].present?
+          find_billing_profile(params[:billing_profile_id])
+        elsif impersonating?
+          # The order belongs to the impersonated user and Warehouse::Order
+          # insists the profile does too, so the key owner's default is a 422.
+          nil
+        else
+          current_token.billing_profile
+        end
+
+        if params[:billing_profile_id].present? && profile.nil?
+          render json: { error: "not_authorized", message: "Billing profile not found or not yours." }, status: :forbidden
+          return nil
+        end
+
+        if profile.nil? && Flipper.enabled?(:require_billing_profile_2026_09_08)
+          render json: {
+            error: "billing_profile_required",
+            message: "A billing profile is required for warehouse orders. Set a default on your API key or pass billing_profile_id per request."
+          }, status: :unprocessable_entity
+          return nil
+        end
+
+        profile
+      end
+
       def contents_params
         return [] unless params[:contents].present?
 
-        params.expect(contents: [[:sku, :quantity]]).map.with_index do |content_item, index|
+        params.expect(contents: [ [ :sku, :quantity ] ]).map.with_index do |content_item, index|
           content_item.tap do |cp|
-            raise ActionController::ParameterMissing.new([:contents, index, :sku]) unless cp[:sku].present?
-            raise ActionController::ParameterMissing.new([:contents, index, :quantity]) unless cp[:quantity].present?
+            raise ActionController::ParameterMissing.new([ :contents, index, :sku ]) unless cp[:sku].present?
+            raise ActionController::ParameterMissing.new([ :contents, index, :quantity ]) unless cp[:quantity].present?
           end
         end
       end

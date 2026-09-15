@@ -1,51 +1,35 @@
 <% content_for :title, "Add HCB Organization" %>
 
-<div class="container">
-  <header class="page-header mb-6">
-    <div class="flex items-center gap-4">
-      <%= link_to "← Back", hcb_payment_accounts_path, class: "text-gray-500 hover:text-gray-700" %>
-      <h1>Add Organization</h1>
-    </div>
-  </header>
-
-  <div class="max-w-lg">
-    <% if @organizations.any? %>
-      <article>
-        <header>
-          <h2>Select Organization</h2>
-        </header>
-        <div class="p-4">
-          <p class="text-gray-600 mb-4">Choose which HCB organization to use for paying postage.</p>
-          
-          <%= form_with url: hcb_payment_accounts_path, method: :post do |f| %>
-            <div class="space-y-3 mb-6">
-              <% @organizations.each do |org| %>
-                <label class="flex items-center p-3 border rounded cursor-pointer hover:bg-gray-50 has-[:checked]:border-green-500 has-[:checked]:bg-green-50">
-                  <%= f.radio_button :organization_id, org.id, class: "mr-3" %>
-                  <span class="font-medium"><%= org.name %></span>
-                </label>
-              <% end %>
-            </div>
-
-            <div class="flex gap-3">
-              <%= f.submit "Add Organization", class: "btn success" %>
-              <%= link_to "Cancel", hcb_payment_accounts_path, class: "btn btn-small" %>
-            </div>
-          <% end %>
-        </div>
-      </article>
-    <% else %>
-      <article>
-        <header>
-          <h2>No Organizations Available</h2>
-        </header>
-        <div class="p-4">
-          <p class="text-gray-600 mb-4">
-            You don't belong to any HCB organizations, or all your organizations are already linked.
-          </p>
-          <%= link_to "← Back", hcb_payment_accounts_path, class: "btn btn-small" %>
-        </div>
-      </article>
-    <% end %>
+<div class="toolbar mb-0 no-border-bottom">
+  <div class="flex-row">
+    <a href="<%= hcb_payment_accounts_path %>" class="text-muted no-underline">← HCB Accounts</a>
+    <strong class="text-title">Add Organization</strong>
   </div>
 </div>
+
+<% if @organizations.any? %>
+  <%= form_with url: hcb_payment_accounts_path, method: :post do |f| %>
+    <section class="mb-1">
+      <strong>Select Organization</strong>
+      <hr>
+      <div class="mt-half text-muted">Choose which HCB organization to use for paying postage.</div>
+      <% @organizations.each do |org| %>
+        <label class="pointer org-picker-row">
+          <%= f.radio_button :organization_id, org.id %>
+          <span class="fw-medium"><%= org.name %></span>
+        </label>
+      <% end %>
+    </section>
+
+    <div class="form-actions-end">
+      <a href="<%= hcb_payment_accounts_path %>" class="text-muted no-underline">Cancel</a>
+      <button type="submit" class="btn-success">Add Organization</button>
+    </div>
+  <% end %>
+<% else %>
+  <section class="empty-state">
+    <strong>No organizations available</strong>
+    <div class="text-muted mt-quarter">You don't belong to any HCB organizations, or all your organizations are already linked.</div>
+    <div class="mt-1"><a href="<%= hcb_payment_accounts_path %>" class="text-muted">← Back</a></div>
+  </section>
+<% end %>

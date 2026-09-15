@@ -1,0 +1,166 @@
+<%= turbo_stream_from @batch, :progress %>
+
+<div class="batch-header">
+  <a href="<%= letter_batch_path(@batch) %>" class="batch-breadcrumb">← <%= @batch.user_facing_title || "Batch ##{@batch.id}" %></a>
+  <h2>Processing</h2>
+  <%= render Components::Shared::StatusBadge.new(status: @batch.aasm_state, type: :batch) %>
+</div>
+
+<%# ── Error banner (turbo target) ── %>
+<div id="batch-error-banner">
+  <% if @batch.process_error.present? %>
+    <div class="banner banner-error"><strong>Error:</strong> <%= @batch.process_error %></div>
+  <% end %>
+</div>
+
+<% total = @batch.letters.count %>
+<% purchased = @batch.letters.where(indicia_state: "purchased").count %>
+<% failed = @batch.letters.where(indicia_state: "failed").count %>
+<%= render partial: "letter/batches/progress_summary", locals: { purchased: purchased, total: total, failed: failed } %>
+
+<%# ── Breakdown ── %>
+<% us_count = @batch.letters.joins(:address).where(addresses: { country: "US" }).count %>
+<% intl_count = total - us_count %>
+<div class="batch-breakdown">
+  <span>US: <%= us_count %></span>
+  <% if intl_count > 0 %><span>Intl: <%= intl_count %></span><% end %>
+  <% stamps = @batch.letters.where(postage_type: "stamps").count %>
+  <% indicia = @batch.letters.where(postage_type: "indicia").count %>
+  <% if stamps > 0 %><span>Stamps: <%= stamps %></span><% end %>
+  <% if indicia > 0 %><span>Indicia: <%= indicia %></span><% end %>
+</div>
+
+<%# ── The grid (turbo targets per cell) ── %>
+<div id="batch-grid-container">
+  <%= render partial: "letter/batches/grid", locals: { cells: @cells } %>
+</div>
+
+<%# ── Error table (turbo appends here) ── %>
+<% failed_letters = @batch.letters.where(indicia_state: "failed").includes(:address) %>
+<div class="batch-failed-section">
+  <% if failed_letters.any? %>
+    <strong class="section-label">
+      <%= failed_letters.count %> failed
+    </strong>
+  <% end %>
+  <table class="<%= 'hidden' unless failed_letters.any? %>" id="batch-error-table">
+    <thead>
+      <tr><th>Letter</th><th>Recipient</th><th>Error</th></tr>
+    </thead>
+    <tbody id="batch-error-tbody">
+      <% failed_letters.each do |letter| %>
+        <%= render partial: "letter/batches/error_row", locals: { letter: letter, error_message: letter.indicia_error } %>
+      <% end %>
+    </tbody>
+  </table>
+</div>
+
+<%# ── Money summary ── %>
+<% charges = @batch.indicia_charges.order(:id).to_a %>
+<% if charges.any? %>
+  <% charged = charges.sum(&:amount_cents) %>
+  <% credited = -LedgerEntry.live.where(reverses: charges).sum(:amount_cents) %>
+  <% spent_cents = @batch.actual_spent_cents %>
+  <% overpaid = @batch.prepaid_cents %>
+  <% pending_charge = charges.find(&:pending?) %>
+  <% refund_from = @batch.refundable_charge %>
+  <div class="detail-grid batch-money">
+    <span class="detail-label">Charged HCB</span>
+    <span>
+      <%= number_to_currency(charged / 100.0) %>
+      <% if pending_charge %><span class="badge badge-warning"><%= pending_charge.hcb_transfer&.state || "pending" %></span><% end %>
+    </span>
+    <% if credited > 0 %>
+      <span class="detail-label">Refunded</span>
+      <span><%= number_to_currency(credited / 100.0) %></span>
+    <% end %>
+    <span class="detail-label">USPS spent</span>
+    <span><%= number_to_currency(spent_cents / 100.0) %></span>
+    <% if overpaid > 0 && @batch.processed? && refund_from %>
+      <strong class="detail-label text-warning">⚠ Overpaid</strong>
+      <span>
+        <strong class="text-warning"><%= number_to_currency(overpaid / 100.0) %></strong>
+        <% if policy(@batch).refund_overpayment? %>
+          <%= form_with url: refund_overpayment_letter_batch_path(@batch), method: :post do %>
+            <%= render Components::MoneyNotice.new(
+              lines: [Billing::Quote::Line.new(category: :indicia, label: "overpaid postage on #{@batch.public_id}", when: :now, amount_cents: [overpaid, refund_from.net_cents].min, count: 1)],
+              profiles: [refund_from.billing_profile],
+              field: nil,
+              locked: true,
+              refund: true,
+              proceed: "Refund",
+              id: "billing-consent-refund",
+            ) %>
+          <% end %>
+        <% end %>
+      </span>
+    <% elsif overpaid > 0 %>
+      <span class="detail-label">Overpaid (so far)</span>
+      <span class="text-muted"><%= number_to_currency(overpaid / 100.0) %></span>
+    <% end %>
+  </div>
+<% end %>
+
+<%# ── Actions (turbo target) ── %>
+<div id="batch-actions" class="batch-actions">
+  <% if @batch.processed? %>
+    <% if @batch.pdf_label.attached? %>
+      <a href="<%= rails_blob_path(@batch.pdf_label, disposition: :inline) %>" target="_blank" class="btn-success">⬇ Download Labels</a>
+    <% end %>
+    <% if failed_letters.any? %>
+      <%= form_with url: retry_failed_letter_batch_path(@batch), method: :post, class: "form-inline" do %>
+        <button type="submit" class="btn-warning">⟳ Retry <%= failed_letters.count %> failed</button>
+      <% end %>
+    <% end %>
+    <a href="<%= letter_batch_path(@batch) %>" class="text-muted">← Back to batch</a>
+  <% elsif @batch.failed? %>
+    <%= form_with url: retry_failed_letter_batch_path(@batch), method: :post, class: "form-inline" do %>
+      <button type="submit" class="btn-warning">⟳ Retry</button>
+    <% end %>
+    <a href="<%= letter_batch_path(@batch) %>" class="text-muted">← Back to batch</a>
+  <% else %>
+    <span class="text-muted">Working…</span>
+  <% end %>
+</div>
+
+<%# ── Billing trail ── %>
+<% transfers = HCB::Transfer.where(id: @batch.ledger_entries.select(:hcb_transfer_id)).order(:id) %>
+<% if transfers.any? && current_user&.admin? %>
+  <details class="batch-audit">
+    <summary>HCB transfers (<%= transfers.size %>)</summary>
+    <table>
+      <thead>
+        <tr><th>Time</th><th>Direction</th><th>HQ org</th><th>Amount</th><th>State</th><th>Key</th><th>HCB id</th><th>Attempts</th><th>Error</th></tr>
+      </thead>
+      <tbody>
+        <% transfers.each do |t| %>
+          <tr>
+            <td class="text-muted"><%= t.created_at.strftime("%b %d %H:%M:%S") %></td>
+            <td><%= t.direction %></td>
+            <td><code><%= t.hq_organization_id %></code></td>
+            <td><%= number_to_currency(t.amount) %></td>
+            <td><code><%= t.state %></code></td>
+            <td><code><%= t.idempotency_key %></code></td>
+            <td><code><%= t.remote_id || "—" %></code></td>
+            <td><%= t.attempts %></td>
+            <td class="text-muted"><%= t.last_error %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </details>
+<% end %>
+
+<script>
+  // Show error table when turbo stream appends a row
+  document.addEventListener('turbo:before-stream-render', function() {
+    var table = document.getElementById('batch-error-table');
+    if (table) table.classList.remove('hidden');
+    // Cancel fallback refresh — turbo is working
+    if (window._batchRefresh) { clearTimeout(window._batchRefresh); window._batchRefresh = null; }
+  });
+  <% unless @batch.processed? || @batch.failed? %>
+    // Fallback: refresh after 10s if no turbo stream arrives
+    window._batchRefresh = setTimeout(function(){ window.location.reload(); }, 10000);
+  <% end %>
+</script>

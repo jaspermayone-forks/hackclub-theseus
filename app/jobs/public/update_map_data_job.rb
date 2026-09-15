@@ -1,12 +1,10 @@
 class Public::UpdateMapDataJob < ApplicationJob
   queue_as :default
 
-  good_job_control_concurrency_with(
-    total_limit: 1,
-    key: "update_map_data"
-  )
-
+  # Intentionally disabled — map data generation is turned off.
+  # Remove the `return` to re-enable.
   def perform
+    return
     map_data = fetch_recent_letters_data
     Rails.cache.write("map_data", map_data, expires_in: 1.hour)
     map_data
@@ -29,11 +27,11 @@ class Public::UpdateMapDataJob < ApplicationJob
 
       bubble_title = if letter.aasm_state == "received"
           "a letter was received here!"
-        elsif letter.iv_mtr_events.blank?
+      elsif letter.iv_mtr_events.blank?
           "a letter was mailed here!"
-        else
+      else
           "a letter was last seen here!"
-        end
+      end
 
       # Find the last valid coordinate (in case the final event failed to geocode)
       current_location = event_coords.last
@@ -43,7 +41,7 @@ class Public::UpdateMapDataJob < ApplicationJob
         current_location: current_location,
         destination_coords: geocode_destination(letter.address),
         bubble_title: bubble_title,
-        aasm_state: letter.aasm_state,
+        aasm_state: letter.aasm_state
       }
     end.select { |letter_data| letter_data[:coordinates].present? }
 
@@ -93,7 +91,7 @@ class Public::UpdateMapDataJob < ApplicationJob
     if return_address.city&.downcase&.include?("shelburne")
       return {
                lat: GeocodingService::FIFTEEN_FALLS[:lat].to_f,
-               lon: GeocodingService::FIFTEEN_FALLS[:lon].to_f,
+               lon: GeocodingService::FIFTEEN_FALLS[:lon].to_f
              }
     end
 
@@ -102,13 +100,13 @@ class Public::UpdateMapDataJob < ApplicationJob
     if result && result[:lat] && result[:lon]
       {
         lat: result[:lat].to_f,
-        lon: result[:lon].to_f,
+        lon: result[:lon].to_f
       }
     else
       # Fallback to FIFTEEN_FALLS if geocoding fails
       {
         lat: GeocodingService::FIFTEEN_FALLS[:lat].to_f,
-        lon: GeocodingService::FIFTEEN_FALLS[:lon].to_f,
+        lon: GeocodingService::FIFTEEN_FALLS[:lon].to_f
       }
     end
   end
@@ -120,7 +118,7 @@ class Public::UpdateMapDataJob < ApplicationJob
 
     {
       lat: result[:lat].to_f,
-      lon: result[:lon].to_f,
+      lon: result[:lon].to_f
     }
   end
 
@@ -130,7 +128,7 @@ class Public::UpdateMapDataJob < ApplicationJob
 
     {
       lat: result[:lat].to_f,
-      lon: result[:lon].to_f,
+      lon: result[:lon].to_f
     }
   end
 end

@@ -1,6 +1,21 @@
-<h1>enter one of those IDs we're always putting on things:</h1>
-<%= form_with url: lookup_public_ids_path, method: :post do |f| %>
-  <%= f.label :id, "ID:" %>
-  <%= f.text_field :id %>
-  <%= f.submit "go!", class: "btn success btn-small" %>
-<% end %>
+<% content_for :title, "ID Lookup" %>
+
+<div class="toolbar mb-0 no-border-bottom">
+  <strong class="text-title">ID Lookup</strong>
+  <span class="spacer"></span>
+</div>
+
+<section>
+  <strong>Search</strong>
+  <hr>
+  <div class="mt-half">
+    <p class="text-muted hint-bottom">Enter a Theseus ID or tracking number to look it up.</p>
+    <%= form_with url: lookup_public_ids_path, method: :post do |f| %>
+      <div class="mb-1">
+        <label class="text-muted label-block">ID</label>
+        <input type="text" name="id" autofocus placeholder="e.g. ltr!abc123, 9400111..." class="w-100">
+      </div>
+      <button type="submit" class="btn-success">⌕ Look up</button>
+    <% end %>
+  </div>
+</section>

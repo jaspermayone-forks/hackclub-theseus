@@ -1,74 +1,261 @@
-<div>
-  <h2 class="inline">
-    Order <%= @warehouse_order.hc_id %>:
-  </h2>
-  <%= render 'status_badge', order: @warehouse_order %>
-  <%= link_to "Show on public page", public_package_path(@warehouse_order), target: "_blank" %>
+<% content_for :title, "Order #{@warehouse_order.hc_id}" %>
+
+<div class="toolbar mb-0 no-border-bottom">
+  <div class="flex-row">
+    <a href="<%= warehouse_orders_path %>" class="text-muted no-underline">← Orders</a>
+    <strong class="text-title">Order <%= @warehouse_order.hc_id %></strong>
+    <%= render 'warehouse/orders/status_badge', order: @warehouse_order %>
+  </div>
+  <div class="flex-row">
+    <%= render Components::Shared::PublicId.new(value: @warehouse_order.hc_id) %>
+    <% if @warehouse_order.user_facing_title.present? %>
+      <span class="text-muted"><%= @warehouse_order.user_facing_title %></span>
+    <% end %>
+    <% @warehouse_order.tags.compact_blank.each do |tag| %>
+      <a href="<%= tag_stats_path(tag) %>" class="no-underline"><span class="badge"><%= tag %></span></a>
+    <% end %>
+  </div>
+  <span class="spacer"></span>
+  <div class="flex-row">
+    <a href="<%= edit_warehouse_order_path(@warehouse_order) %>">✎ Edit</a>
+    <a href="<%= public_package_path(@warehouse_order) %>" target="_blank">↗ Public</a>
+    <% if @warehouse_order.zenventory_url.present? %>
+      <a href="<%= @warehouse_order.zenventory_url %>" target="_blank">↗ Zen</a>
+    <% end %>
+    <% if policy(@warehouse_order).destroy? %>
+      <%= form_with url: warehouse_order_path(@warehouse_order), method: :delete, data: { turbo_confirm: "Delete this order?" }, class: "form-inline" do %>
+        <button type="submit" class="btn-danger btn-sm">✕</button>
+      <% end %>
+    <% end %>
+  </div>
 </div>
 
-<%= render 'shared/tags', tags: @warehouse_order.tags %>
+<div class="show-layout">
+  <div class="show-main">
 
-<div class="my-2">
-  <b>title:</b> <%= @warehouse_order.user_facing_title %><br>
-  <b>recipient email:</b>
-  <%= link_to @warehouse_order.recipient_email, "mailto:#{@warehouse_order.recipient_email}" %><br>
-  <b>recipient:</b><br>
-  <%= render 'addresses/address', address: @warehouse_order.address %>
+    <!-- Details -->
+    <section class="mb-1">
+      <strong>Details</strong>
+      <hr>
+      <div class="detail-grid mt-half">
+        <span class="detail-label">Created</span>
+        <span><%= @warehouse_order.created_at.strftime("%b %d, %Y %H:%M") %></span>
+        <span class="detail-label">Created by</span>
+        <span><%= @warehouse_order.user&.email || "—" %></span>
+        <% if @warehouse_order.created_via.present? %>
+          <span class="detail-label">Created via</span>
+          <span><%= @warehouse_order.created_via.humanize %></span>
+        <% end %>
+        <span class="detail-label">Notify</span>
+        <span><%= @warehouse_order.notify_on_dispatch? ? "Yes" : "No" %></span>
+        <span class="detail-label">Zenventory</span>
+        <span><code><%= @warehouse_order.zenventory_id || "—" %></code></span>
+        <span class="detail-label">Billing</span>
+        <span><%= @warehouse_order.billing_profile&.organization_name || "—" %></span>
+      </div>
+    </section>
+
+    <!-- Contents -->
+    <section class="mb-1">
+      <strong>Contents</strong>
+      <hr>
+      <table class="mt-half w-100">
+        <thead>
+          <tr>
+            <th class="text-left">SKU</th>
+            <th class="text-right">Qty</th>
+            <th class="text-right">Cost to HC</th>
+            <th class="text-right">Declared</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% @warehouse_order.line_items.each do |li| %>
+            <tr>
+              <td>
+                <%= link_to li.sku.name, warehouse_sku_path(li.sku) %>
+                <span class="text-muted"><code><%= li.sku.sku %></code></span>
+              </td>
+              <td class="text-right tabular"><strong><%= li.quantity %></strong></td>
+              <td class="text-muted text-right tabular"><%= number_to_currency(li.sku.actual_cost_to_hc) %></td>
+              <td class="text-muted text-right tabular"><%= number_to_currency(li.sku.declared_unit_cost) %></td>
+            </tr>
+          <% end %>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td><strong>Total</strong></td>
+            <td class="text-right tabular"><strong><%= @warehouse_order.line_items.sum(&:quantity) %></strong></td>
+            <td class="text-right tabular"><strong><%= number_to_currency(@warehouse_order.contents_actual_cost_to_hc) %></strong></td>
+            <td class="text-right tabular"><strong><%= number_to_currency(@warehouse_order.contents_declared_unit_cost) %></strong></td>
+          </tr>
+        </tfoot>
+      </table>
+    </section>
+
+    <!-- Recipient -->
+    <section class="mb-1">
+      <strong>Recipient</strong>
+      <hr>
+      <div class="mt-half">
+        <strong><%= @warehouse_order.address.first_name %> <%= @warehouse_order.address.last_name %></strong><br>
+        <span class="text-muted">
+          <%= @warehouse_order.address.line_1 %><br>
+          <% if @warehouse_order.address.line_2.present? %><%= @warehouse_order.address.line_2 %><br><% end %>
+          <%= @warehouse_order.address.city %>, <%= @warehouse_order.address.state %> <%= @warehouse_order.address.postal_code %><br>
+          <%= ISO3166::Country[@warehouse_order.address.country]&.common_name || @warehouse_order.address.country %>
+        </span>
+        <% if @warehouse_order.recipient_email.present? %>
+          <hr class="hr-tight">
+          <span class="text-muted">✉</span> <%= link_to @warehouse_order.recipient_email, "mailto:#{@warehouse_order.recipient_email}" %>
+        <% end %>
+      </div>
+    </section>
+
+    <% if @warehouse_order.mailed? %>
+      <!-- Shipping -->
+      <section class="mb-1">
+        <strong>Shipping</strong>
+        <hr>
+        <div class="detail-grid mt-half">
+          <span class="detail-label">Carrier</span>
+          <span><%= @warehouse_order.pretty_via %></span>
+          <% if @warehouse_order.tracking_number.present? %>
+            <span class="detail-label">Tracking</span>
+            <span>
+              <% if @warehouse_order.tracking_url.present? %>
+                <%= link_to @warehouse_order.tracking_number, @warehouse_order.tracking_url, target: "_blank" %>
+              <% else %>
+                <code><%= @warehouse_order.tracking_number %></code>
+              <% end %>
+            </span>
+          <% end %>
+          <% if @warehouse_order.mailed_at.present? %>
+            <span class="detail-label">Shipped</span>
+            <span><%= @warehouse_order.mailed_at.strftime("%b %d, %Y") %></span>
+          <% end %>
+        </div>
+        <% if @warehouse_order.might_be_slow? %>
+          <div class="mt-half">
+            <div class="banner banner-warning">⚠ International shipping may take 2–4 weeks</div>
+          </div>
+        <% end %>
+      </section>
+    <% end %>
+
+    <% if @warehouse_order.batch.present? %>
+      <section class="mb-1">
+        <strong>Batch</strong>
+        <hr>
+        <div class="mt-half">
+          <div class="batch-row-flex">
+            <span>
+              <strong>Batch #<%= @warehouse_order.batch.id %></strong>
+              <span class="text-muted"><%= @warehouse_order.batch.aasm.current_state.to_s.titleize %></span>
+            </span>
+            <a href="<%= warehouse_batch_path(@warehouse_order.batch) %>">View Batch →</a>
+          </div>
+        </div>
+      </section>
+    <% end %>
+
+    <% if @warehouse_order.internal_notes.present? %>
+      <section class="mb-1">
+        <strong>Internal Notes</strong>
+        <hr>
+        <pre class="notes-pre"><%= @warehouse_order.internal_notes %></pre>
+      </section>
+    <% end %>
+
+    <%= render partial: "admin_inspector", locals: { record: @warehouse_order } %>
+    <% inspector_toggle :line_items %>
+  </div>
+
+  <div class="show-sidebar">
+    <!-- Actions -->
+    <section class="mb-1">
+      <strong>Actions</strong>
+      <hr>
+      <div class="mt-half">
+        <% has_action = false %>
+
+        <% if policy(@warehouse_order).send_to_warehouse? && @warehouse_order.may_mark_dispatched? %>
+          <% has_action = true %>
+          <%= form_with url: send_to_warehouse_warehouse_order_path(@warehouse_order), method: :post do %>
+            <%= render Components::MoneyNotice.new(
+              lines: @warehouse_order.billing_lines,
+              profiles: [@warehouse_order.billing_profile].compact,
+              field: nil,
+              locked: true,
+              unbilled: @warehouse_order.billing_profile.nil?,
+              proceed: "Send to Warehouse",
+            ) %>
+          <% end %>
+        <% end %>
+
+        <% if @warehouse_order.may_mark_canceled? && policy(@warehouse_order).cancel? %>
+          <% has_action = true %>
+          <a href="<%= cancel_warehouse_order_path(@warehouse_order) %>" class="mt-half block-link">
+            <button class="btn-danger btn-sm w-100">× Cancel Order</button>
+          </a>
+        <% end %>
+
+        <% unless has_action %>
+          <% if @warehouse_order.mailed? %>
+            <div class="action-state action-state--success">
+              <span class="action-state-icon">✓</span>
+              <div class="mt-half"><strong>Shipped</strong></div>
+            </div>
+          <% elsif @warehouse_order.canceled_at.present? %>
+            <div class="text-muted action-state">
+              <span class="action-state-icon">×</span>
+              <div class="mt-half"><strong>Canceled</strong></div>
+            </div>
+          <% else %>
+            <span class="text-muted">No actions available</span>
+          <% end %>
+        <% end %>
+      </div>
+    </section>
+
+    <!-- Cost Summary -->
+    <section class="mb-1">
+      <strong>Cost Summary</strong>
+      <hr>
+      <div class="detail-grid mt-half">
+        <span class="detail-label">Contents</span>
+        <span><%= number_to_currency(@warehouse_order.contents_actual_cost_to_hc) %></span>
+        <span class="detail-label">Labor</span>
+        <span><%= number_to_currency(@warehouse_order.labor_cost || 0) %></span>
+        <span class="detail-label">Postage</span>
+        <span><%= @warehouse_order.postage_cost.present? ? number_to_currency(@warehouse_order.postage_cost) : "—" %></span>
+      </div>
+      <hr class="hr-tight">
+      <div class="detail-grid">
+        <span class="detail-label"><strong>Total</strong></span>
+        <span><strong><%= number_to_currency(@warehouse_order.total_cost) %></strong></span>
+      </div>
+    </section>
+
+    <!-- Timeline -->
+    <section>
+      <strong>Timeline</strong>
+      <hr>
+      <div class="detail-grid mt-half">
+        <span class="detail-label">Created</span>
+        <span><%= @warehouse_order.created_at.strftime("%b %d, %Y") %></span>
+        <% if @warehouse_order.dispatched_at.present? %>
+          <span class="detail-label">Dispatched</span>
+          <span><%= @warehouse_order.dispatched_at.strftime("%b %d, %Y") %></span>
+        <% end %>
+        <% if @warehouse_order.mailed_at.present? %>
+          <span class="detail-label">Shipped</span>
+          <span><%= @warehouse_order.mailed_at.strftime("%b %d, %Y") %></span>
+        <% end %>
+        <% if @warehouse_order.canceled_at.present? %>
+          <span class="detail-label">Canceled</span>
+          <span><%= @warehouse_order.canceled_at.strftime("%b %d, %Y") %></span>
+        <% end %>
+      </div>
+    </section>
+  </div>
 </div>
-
-<% if @warehouse_order.batch.present? %>
-  <%= render 'shared/batch_info', record: @warehouse_order %>
-<% end %>
-
-<b>contents:</b>
-<%= render 'warehouse/orders/line_items', order: @warehouse_order %>
-
-<div class="my-2">
-  <b>labor cost:</b> <%= number_to_currency(@warehouse_order.labor_cost) %>
-</div>
-
-<div class="my-2">
-  <b>actual contents cost:</b> <%= number_to_currency(@warehouse_order.contents_actual_cost_to_hc) %>
-</div>
-
-<div class="my-2">
-  <b>postage cost:</b>
-  <% if @warehouse_order.postage_cost.present? %>
-    <%= number_to_currency(@warehouse_order.postage_cost) %>
-  <% else %>
-    $?.??
-  <% end %>
-</div>
-
-<div class="my-2">
-  <b>all in<%= " (excluding postage)" unless @warehouse_order.postage_cost.present? %>:</b>
-  <%= number_to_currency((@warehouse_order.contents_actual_cost_to_hc || 0) + 
-    (@warehouse_order.labor_cost || 0) +
-    (@warehouse_order.postage_cost || 0)) %>
-</div>
-
-<div class="my-4">
-  <b>Internal Notes:</b><br>
-  <%= @warehouse_order.internal_notes %>
-</div>
-
-<br>
-
-<% zenv_link @warehouse_order %>
-
-<% if policy(@warehouse_order).send_to_warehouse? && @warehouse_order.may_mark_dispatched? %>
-  <%= button_to "send to warehouse!", action: :send_to_warehouse %>
-<% end %>
-
-<% if policy(@warehouse_order).destroy? %>
-  <%= button_to "delete draft order.", @warehouse_order, method: :delete %>
-<% end %>
-
-<div>
-  <%= link_to "edit this order", edit_warehouse_order_path(@warehouse_order) %><br>
-  <%= link_to "back to orders", warehouse_orders_path %>
-</div>
-
-<%= render partial: "admin_inspector", locals: { record: @warehouse_order } %>
-
-<% inspector_toggle :line_items %>

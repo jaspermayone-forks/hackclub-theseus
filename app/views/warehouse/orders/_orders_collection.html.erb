@@ -1,22 +1,32 @@
-<% orders.each do |order| %>
-  <article class="card mb-4">
-    <div class="card-header">
-      <h3 class="mb-0">
-        <%= link_to order.hc_id, order %> – <%= order.user_facing_title %>
-        <%= render 'warehouse/orders/status_badge', order: order %>
-      </h3>
-    </div>
-    <div class="card-body">
-      <div class="md:grid-cols-2 gap-4">
-        <div>
-          <span class="text-gray-500">Recipient:</span>
-          <%= order.address.name_line %> (<%= order.recipient_email %>)
-        </div>
-        <div>
-          <span class="text-gray-500">Tags:</span>
-          <%= render 'shared/tags', tags: order.tags %>
-        </div>
-      </div>
-    </div>
-  </article>
-<% end %> 
+<table class="w-100">
+  <thead>
+    <tr>
+      <th class="text-left">Order</th>
+      <th class="text-left">Recipient</th>
+      <th class="text-left">Created</th>
+      <th class="text-left">Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% orders.each do |order| %>
+      <tr>
+        <td class="cell-pad">
+          <a href="<%= warehouse_order_path(order) %>" class="link-bold"><%= order.hc_id %></a>
+          <% if order.user_facing_title.present? %>
+            <span class="row-tag"><%= order.user_facing_title %></span>
+          <% end %>
+        </td>
+        <td class="cell-pad">
+          <%= order.address&.name_line || "—" %>
+          <% if order.recipient_email.present? %>
+            <span class="text-muted"> (<%= order.recipient_email %>)</span>
+          <% end %>
+        </td>
+        <td class="cell-pad"><%= order.created_at.strftime(order.created_at.year == Date.current.year ? "%b %d" : "%b %d, %Y") %></td>
+        <td class="cell-pad">
+          <%= render 'warehouse/orders/status_badge', order: order %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>

@@ -1,109 +1,56 @@
 class BaseBatchesController < ApplicationController
   before_action :set_batch, except: %i[ index new create ]
-  before_action :setup_csv_fields, only: %i[ map_fields set_mapping ]
+  before_action :ensure_importable, only: %i[ set_mapping import_with_skip ]
+  before_action :restore_field_mapping_headers, only: %i[ set_mapping ]
 
-  REQUIRED_FIELDS = %w[first_name line_1 city state postal_code country].freeze
-  PREVIEW_ROWS = 3
-
-  # GET /batches/1 or /batches/1.json
-  def show
-    authorize @batch
-  end
-
-  # GET /batches/1/edit
-  def edit
-    authorize @batch
-  end
-
-  # PATCH/PUT /batches/1 or /batches/1.json
-  def update
-    authorize @batch
-    respond_to do |format|
-      if @batch.update(batch_params)
-        format.html { redirect_to @batch, notice: "Batch was successfully updated." }
-        format.json { render :show, status: :ok, location: @batch }
-      else
-        format.html { render :edit, status: :unprocessable_entity }
-        format.json { render json: @batch.errors, status: :unprocessable_entity }
-      end
-    end
-  end
-
-  # DELETE /batches/1 or /batches/1.json
-  def destroy
-    authorize @batch
-    @batch.destroy!
-
-    respond_to do |format|
-      format.html { redirect_to batches_path, status: :see_other, notice: "Batch was successfully destroyed." }
-      format.json { head :no_content }
-    end
-  end
-
-  def map_fields
-    authorize @batch, :map_fields?
-  end
-
-  def set_mapping
-    authorize @batch, :set_mapping?
-    mapping = mapping_params.to_h
-
-    # Invert the mapping to get from CSV columns to address fields
-    inverted_mapping = mapping.invert
-
-    # Validate required fields
-    missing_fields = REQUIRED_FIELDS.reject { |field| inverted_mapping[field].present? }
-
-    if missing_fields.any?
-      flash.now[:error] = "Please map the following required fields: #{missing_fields.join(", ")}"
-      render :map_fields, status: :unprocessable_entity
-      return
-    end
-
-    if @batch.update!(field_mapping: inverted_mapping)
-      begin
-        skipped_countries = @batch.run_map!
-      rescue StandardError => e
-        Rails.logger.warn(e)
-        event_id = Sentry.capture_exception(e)&.event_id
-        redirect_to send("#{@batch.class.name.split("::").first.downcase}_batch_path", @batch), flash: { alert: "error mapping fields! #{e.message} (error: #{event_id})" }
-        return
-      end
-      notice = "Field mapping saved. Please review and process your batch."
-      if skipped_countries.present?
-        names = skipped_countries.map { |cc| ISO3166::Country[cc]&.common_name || cc }.to_sentence
-        notice += " Addresses in #{names} were skipped — USPS does not currently deliver there."
-      end
-      redirect_to send("process_confirm_#{@batch.class.name.split("::").first.downcase}_batch_path", @batch), notice: notice
-    else
-      flash.now[:error] = "failed to save field mapping. #{@batch.errors.full_messages.join(", ")}"
-      render :map_fields, status: :unprocessable_entity
-    end
-  end
+  rescue_from BatchImporter::Error, with: :importer_refused
+  # CSV::InvalidEncodingError is one of these too: latin-1 bytes and unclosed
+  # quotes both blow up the moment we read the headers.
+  rescue_from CSV::MalformedCSVError, with: :csv_unreadable
 
   private
 
   def set_batch
-    @batch = Batch.find(params[:id])
+    @batch = batch_scope.find(params[:id])
   end
 
-  def setup_csv_fields
-    csv_rows = CSV.parse(@batch.csv_data)
-    @csv_headers = csv_rows.first
-    @csv_preview = csv_rows[1..PREVIEW_ROWS] || []
+  # Importing twice appends a second copy of every row: duplicate letters, or
+  # warehouse orders that ship and charge labor again. The mapping page is only
+  # good for a batch that hasn't been imported yet.
+  def ensure_importable
+    return if @batch.awaiting_field_mapping?
 
-    # Get fields based on batch type
-    @address_fields = if @batch.is_a?(Letter::Batch)
-        # For letter batches, include address fields and rubber_stamps
-        (Address.column_names - ["id", "created_at", "updated_at", "batch_id"]) +
-          ["rubber_stamps"]
-      else
-        # For other batches, just include address fields
-        (Address.column_names - ["id", "created_at", "updated_at"])
-      end
+    redirect_to batch_show_path, alert: "This batch has already been imported."
   end
 
-  def mapping_params
-    params.require(:mapping).permit!
+  # The map form strips [ and ] out of the field names it submits, because rack
+  # reads those as nested hashes. The mapping is keyed by CSV header, so put the
+  # real headers back before anyone stores it.
+  def restore_field_mapping_headers
+    submitted = params[:field_mapping]
+    return if submitted.blank?
+
+    headers = @batch.csv_headers.compact_blank.index_by { |header| Views::Batches::Map.param_key(header) }
+    rebuilt = submitted.to_unsafe_h.to_h { |key, field| [ headers[key] || key, field ] }
+    params[:field_mapping] = ActionController::Parameters.new(rebuilt)
   end
+
+  def importer_refused(error)
+    redirect_to batch_map_fields_path, alert: error.message
+  end
+
+  def csv_unreadable(error)
+    redirect_to batch_new_path, alert: "Couldn't read that CSV: #{error.message} Fix it and upload it again."
+  end
+
+  # Both subclasses live in their own route namespace; the shared guards and
+  # rescues need somewhere to send people back to.
+  def batch_route_scope = @batch.is_a?(Letter::Batch) ? "letter" : "warehouse"
+  def batch_show_path = send("#{batch_route_scope}_batch_path", @batch)
+  def batch_map_fields_path = send("map_fields_#{batch_route_scope}_batch_path", @batch)
+  def batch_new_path = send("new_#{batch_route_scope}_batch_path")
+
+  # Letter and warehouse batches answer to different policies, so each
+  # controller says which scope a member action may load from.
+  def batch_scope = raise(NotImplementedError)
 end

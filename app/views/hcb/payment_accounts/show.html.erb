@@ -1,30 +1,31 @@
-<% content_for :title, "#{@payment_account.organization_name} - HCB" %>
+<% content_for :title, "#{@payment_account.organization_name} — Billing Profile" %>
 
-<div class="container">
-  <header class="page-header mb-6">
-    <div class="flex items-center gap-4">
-      <%= link_to "← Back", hcb_payment_accounts_path, class: "text-gray-500 hover:text-gray-700" %>
-      <h1><%= @payment_account.organization_name %></h1>
-    </div>
-  </header>
+<div class="toolbar mb-0 no-border-bottom">
+  <div class="flex-row">
+    <a href="<%= hcb_payment_accounts_path %>" class="text-muted no-underline">← Billing Profiles</a>
+    <strong class="text-title"><%= @payment_account.organization_name %></strong>
+  </div>
+  <span class="spacer"></span>
+</div>
 
-  <div class="max-w-2xl">
-    <article>
-      <header>
-        <h2>Organization Details</h2>
-      </header>
-      <div class="p-4">
-        <dl class="grid grid-cols-2 gap-4">
-          <div>
-            <dt class="text-sm text-gray-500">Organization ID</dt>
-            <dd class="font-mono text-sm"><%= @payment_account.organization_id %></dd>
-          </div>
-          <div>
-            <dt class="text-sm text-gray-500">Added</dt>
-            <dd><%= @payment_account.created_at.strftime("%B %d, %Y") %></dd>
-          </div>
-        </dl>
+<div class="show-layout">
+  <div class="show-main">
+    <section class="mb-1">
+      <strong>Organization Details</strong>
+      <hr>
+      <div class="detail-grid mt-half">
+        <span class="detail-label">Billing Profile ID</span>
+        <span><%= copy_to_clipboard(@payment_account.public_id) { content_tag(:code, @payment_account.public_id) } %></span>
+        <span class="detail-label">Organization</span>
+        <span><%= @payment_account.organization_name %></span>
+        <span class="detail-label">HCB Org ID</span>
+        <span><code><%= @payment_account.organization_id %></code></span>
+        <span class="detail-label">Added</span>
+        <span><%= @payment_account.created_at.strftime("%b %d, %Y") %></span>
       </div>
-    </article>
+    </section>
+  </div>
+
+  <div class="show-sidebar">
   </div>
 </div>

@@ -1,6 +1,20 @@
-<h1>generate customs receipt</h1>
-<%= form_with url: generate_customs_receipts_path, method: :get do |f| %>
-  <%= f.label :search, "search:" %>
-  <%= f.text_field :search, placeholder: "ID (recASDF/pkg!SDfJK) or original tracking number (ASnnnnn...)" %>
-  <%= f.submit "Generate" %>
-<% end %>
+<% content_for :title, "Customs Receipts" %>
+
+<div class="toolbar mb-0 no-border-bottom">
+  <strong class="text-title">Generate Customs Receipt</strong>
+  <span class="spacer"></span>
+</div>
+
+<section>
+  <strong>Search</strong>
+  <hr>
+  <div class="mt-half">
+    <%= form_with url: generate_customs_receipts_path, method: :get do |f| %>
+      <div class="mb-1">
+        <label class="text-muted label-block">ID or Tracking Number</label>
+        <input type="text" name="search" autofocus placeholder="ID (recASDF/pkg!SDfJK) or original tracking number (ASnnnnn...)" class="w-100">
+      </div>
+      <button type="submit" class="btn-success">⎘ Generate</button>
+    <% end %>
+  </div>
+</section>

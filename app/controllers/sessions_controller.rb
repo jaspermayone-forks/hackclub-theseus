@@ -1,7 +1,15 @@
 class SessionsController < ApplicationController
-  skip_before_action :authenticate_user!, only: [:omniauth_failure, :hackclub_callback]
+  skip_before_action :authenticate_user!, only: [ :omniauth_failure, :hackclub_callback, :dev_login ]
 
   skip_after_action :verify_authorized
+
+  def dev_login
+    raise ActionController::RoutingError, "Not Found" unless Rails.env.development?
+
+    user = User.find(params[:user_id])
+    session[:user_id] = user.id
+    redirect_to root_path, notice: "dev login as #{user.username}"
+  end
 
   def impersonate
     unless current_user.admin?
@@ -18,13 +26,15 @@ class SessionsController < ApplicationController
   end
 
   def stop_impersonating
+    return redirect_to root_path unless session[:impersonator_user_id]
+
     session[:user_id] = session[:impersonator_user_id]
     session[:impersonator_user_id] = nil
     redirect_to root_path, notice: "welcome back, 007!"
   end
 
   def destroy
-    session[:user_id] = nil
+    reset_session
     redirect_to root_path, notice: "bye, see you next time!"
   end
 

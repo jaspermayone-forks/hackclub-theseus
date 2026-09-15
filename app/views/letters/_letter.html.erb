@@ -1,36 +1,14 @@
-<div id="<%= dom_id letter %>" class="letter-item p-3 bg-white border rounded shadow-sm hover:shadow-md transition-shadow">
-  <div class="flex justify-between items-center mb-2">
-    <h3 class="text-base font-medium">
-      <%= link_to letter do %>
-        <% if letter.user_facing_title.present? %>
-          <%= letter.user_facing_title %>
-        <% else %>
-          <%= letter.public_id %> to <%= letter.address.name_line %>
-        <% end %>
-      <% end %>
-    </h3>
-    <%= letter_status_badge(letter.aasm_state, 'float-right') %>
-  </div>
-  
-  <div class="grid grid-cols-3 gap-1 text-sm text-gray-600">
-    <div class="truncate">
-      <span class="text-gray-400">From:</span>
-      <%= letter.return_address.present? ? letter.return_address_name_line : 'N/A' %>
-    </div>
-    
-    <div class="truncate">
-      <span class="text-gray-400">Created:</span>
-      <%= time_ago_in_words(letter.created_at) %>
-    </div>
-    
-    <div class="truncate">
-      <span class="text-gray-400">Size:</span>
-      <%= letter.height %>" × <%= letter.width %>"
-    </div>
-  </div>
-  
-  <div class="mt-2">
-    <span class="text-gray-400">Tags:</span>
-    <%= render 'shared/tags', tags: letter.tags %>
-  </div>
-</div>
+<tr id="<%= dom_id letter %>">
+  <td class="cell-pad">
+    <a href="<%= letter_path(letter) %>" class="link-bold"><%= letter.public_id %></a>
+    <% if letter.user_facing_title.present? %>
+      <span class="row-tag"><%= letter.user_facing_title %></span>
+    <% end %>
+  </td>
+  <td class="cell-pad"><%= letter.created_at.strftime(letter.created_at.year == Date.current.year ? "%b %d" : "%b %d, %Y") %></td>
+  <td class="cell-pad"><%= letter.address&.name_line || "—" %></td>
+  <td class="text-muted cell-pad"><%= letter.origin_label %></td>
+  <td class="cell-pad">
+    <%= render Components::Shared::StatusBadge.new(status: letter.aasm_state, type: :letter) %>
+  </td>
+</tr>

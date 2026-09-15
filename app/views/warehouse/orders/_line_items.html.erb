@@ -1,37 +1,37 @@
-<table class="table-fixed text-left border border-gray-300 border-collapse">
-  <tr>
-    <th class="border border-gray-300">SKU</th>
-    <th class="border border-gray-300">Quantity</th>
-    <th class="border border-gray-300">Cost to HC</th>
-    <th class="border border-gray-300">Declared value</th>
-  </tr>
-  <% order.line_items.each do |li| %>
+<table class="w-100 mt-half">
+  <thead>
     <tr>
-      <td class="border border-gray-400">
-        <%= link_to li.sku.name, li.sku, target: '_blank' %>
-      </td>
-      <td class="border border-gray-400">
-        <%= li.quantity %>
-      </td>
-      <td class="border border-gray-400">
-        <%= number_to_currency li.sku.actual_cost_to_hc %>
-      </td>
-      <td class="border border-gray-400">
-        <% if li.sku.declared_unit_cost.zero? %>
-          <span style="color: red; font-weight: bold;" title="This SKU has no cost data! It will block dispatch.">⚠ $0.00</span>
-        <% else %>
-          <%= number_to_currency li.sku.declared_unit_cost %>
-        <% end %>
-      </td>
+      <th class="text-left">SKU</th>
+      <th class="text-right">Qty</th>
+      <th class="text-right">Cost to HC</th>
+      <th class="text-right">Declared</th>
     </tr>
-  <% end %>
-  <tr>
-    <td colspan="2">Total:</td>
-    <td class="border border-gray-400">
-      <%= number_to_currency order.contents_actual_cost_to_hc %>
-    </td>
-    <td class="border border-gray-400">
-      <%= number_to_currency order.contents_declared_unit_cost %>
-    </td>
-  </tr>
+  </thead>
+  <tbody>
+    <% order.line_items.each do |li| %>
+      <tr>
+        <td class="cell-pad">
+          <a href="<%= warehouse_sku_path(li.sku) %>" class="no-underline"><%= li.sku.name %></a>
+          <span class="text-muted"> (<code><%= li.sku.sku %></code>)</span>
+        </td>
+        <td class="num-cell"><%= li.quantity %></td>
+        <td class="num-cell"><%= number_to_currency(li.sku.actual_cost_to_hc) %></td>
+        <td class="num-cell">
+          <% if li.sku.declared_unit_cost.zero? %>
+            <span class="text-danger" title="No cost data — will block dispatch">⚠ $0.00</span>
+          <% else %>
+            <%= number_to_currency(li.sku.declared_unit_cost) %>
+          <% end %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+  <tfoot>
+    <tr class="fw-bold">
+      <td class="cell-pad">Total</td>
+      <td></td>
+      <td class="num-cell"><%= number_to_currency(order.contents_actual_cost_to_hc) %></td>
+      <td class="num-cell"><%= number_to_currency(order.contents_declared_unit_cost) %></td>
+    </tr>
+  </tfoot>
 </table>

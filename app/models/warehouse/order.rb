@@ -7,6 +7,7 @@
 #  canceled_at             :datetime
 #  carrier                 :string
 #  contents_cost           :decimal(10, 2)
+#  created_via             :integer          default(0), not null
 #  dispatched_at           :datetime
 #  idempotency_key         :string
 #  internal_notes          :text
@@ -27,49 +28,83 @@
 #  updated_at              :datetime         not null
 #  address_id              :bigint           not null
 #  batch_id                :bigint
+#  billing_profile_id      :bigint
 #  hc_id                   :string
-#  source_tag_id           :bigint           not null
+#  origin_batch_id         :bigint
 #  template_id             :bigint
 #  user_id                 :bigint           not null
 #  zenventory_id           :integer
 #
 # Indexes
 #
-#  index_warehouse_orders_on_address_id       (address_id)
-#  index_warehouse_orders_on_batch_id         (batch_id)
-#  index_warehouse_orders_on_hc_id            (hc_id)
-#  index_warehouse_orders_on_idempotency_key  (idempotency_key) UNIQUE
-#  index_warehouse_orders_on_source_tag_id    (source_tag_id)
-#  index_warehouse_orders_on_tags             (tags) USING gin
-#  index_warehouse_orders_on_template_id      (template_id)
-#  index_warehouse_orders_on_user_id          (user_id)
+#  index_warehouse_orders_on_aasm_state          (aasm_state)
+#  index_warehouse_orders_on_address_id          (address_id)
+#  index_warehouse_orders_on_batch_id            (batch_id)
+#  index_warehouse_orders_on_billing_profile_id  (billing_profile_id)
+#  index_warehouse_orders_on_created_via         (created_via)
+#  index_warehouse_orders_on_hc_id               (hc_id)
+#  index_warehouse_orders_on_idempotency_key     (idempotency_key) UNIQUE
+#  index_warehouse_orders_on_origin_batch_id     (origin_batch_id)
+#  index_warehouse_orders_on_tags                (tags) USING gin
+#  index_warehouse_orders_on_template_id         (template_id)
+#  index_warehouse_orders_on_user_id             (user_id)
+#  index_warehouse_orders_on_zenventory_id       (zenventory_id)
 #
 # Foreign Keys
 #
 #  fk_rails_...  (address_id => addresses.id)
 #  fk_rails_...  (batch_id => batches.id)
-#  fk_rails_...  (source_tag_id => source_tags.id)
+#  fk_rails_...  (billing_profile_id => hcb_payment_accounts.id)
+#  fk_rails_...  (origin_batch_id => batches.id)
 #  fk_rails_...  (template_id => warehouse_templates.id)
 #  fk_rails_...  (user_id => users.id)
 #
 class Warehouse::Order < ApplicationRecord
   has_paper_trail
+  include Ledgerable
 
   include AASM
   include HasAddress
   include CanBeBatched
   include PublicIdentifiable
+  include PgSearch::Model
   set_public_id_prefix "pkg"
+
+  pg_search_scope :search,
+    against: %i[hc_id recipient_email user_facing_title tags],
+    associated_against: {
+      address: %i[first_name last_name]
+    },
+    using: {
+      tsearch: { prefix: true }
+    }
+
+  enum :created_via, { manual: 0, bulk_upload: 1, api: 2 }
+
+  # The ledger went live on 2026-09-09. Orders created before it were never
+  # quoted a price and nobody consented to one, so they never get ledger
+  # entries — no matter what else is true about them.
+  #
+  # This is a floor, not a nicety: billing_profile_id is the only thing keeping
+  # the postage sweep off the historical backlog right now, and it's nullable on
+  # every legacy row. The day someone backfills it (to fix reporting, say),
+  # Warehouse::UpdateMailingInfoJob runs within five minutes and bills years of
+  # already-shipped packages to whoever it just attached.
+  BILLING_EPOCH = Time.utc(2026, 9, 9).freeze
 
   belongs_to :template, class_name: "Warehouse::Template", optional: true
   belongs_to :user
-  belongs_to :source_tag
+  belongs_to :origin_batch, class_name: "Batch", optional: true
+  belongs_to :billing_profile, class_name: "BillingProfile", foreign_key: :billing_profile_id, optional: true
 
   validates :line_items, presence: true
   validates :recipient_email, presence: true
   validates :address, international_contact: { email: :recipient_email }
   validate :can_mail_parcels_to_country
+  validate :billing_profile_required, on: :create
+  validate :billing_profile_belongs_to_user
 
+  before_validation :set_created_via_defaults, on: :create
   after_create :set_hc_id
   before_save :update_costs
 
@@ -94,7 +129,7 @@ class Warehouse::Order < ApplicationRecord
                    service: :service,
                    mailed_at: :mailed_at,
                    labor_cost: :labor_cost,
-                   postage_cost: :postage_cost,
+                   postage_cost: :postage_cost
                  }
 
   has_zenventory_url "https://app.zenventory.com/orders/edit-order/%s", :zenventory_id
@@ -108,7 +143,7 @@ class Warehouse::Order < ApplicationRecord
       state: address.state,
       zip: address.postal_code,
       countryCode: address.country,
-      phone: address.phone_number,
+      phone: address.phone_number
     }.compact_blank
   end
 
@@ -116,15 +151,15 @@ class Warehouse::Order < ApplicationRecord
     {
       name: address.first_name,
       surname: address.last_name || "​",
-      email: recipient_email,
+      email: recipient_email
     }.compact_blank
   end
 
   def cancel!(reason)
-    transaction do
-      mark_canceled!
-      Zenventory.cancel_customer_order(zenventory_id, reason)
-    end
+    raise AASM::InvalidTransition.new(self, :mark_canceled, :default) unless may_mark_canceled?
+
+    Zenventory.cancel_customer_order(zenventory_id, reason)
+    mark_canceled!
   end
 
   class MissingCostsError < StandardError; end
@@ -139,22 +174,84 @@ class Warehouse::Order < ApplicationRecord
         "Please go find Nora right now."
     end
 
+    # Zenventory call outside the transaction so we don't hold a row lock
+    # across an HTTP round-trip. If the POST succeeds but the transition
+    # fails, we have an orphaned Zenventory order — recoverable on retry.
+    payload = {
+      orderNumber: "hack.club/#{hc_id}",
+      customer: customer_attributes,
+      shippingAddress: shipping_address_attributes,
+      billingAddress: { sameAsShipping: true },
+      items: generate_order_items
+    }
+    zenventory_order = Zenventory.create_customer_order(payload)
+
     ActiveRecord::Base.transaction do
-      raise AASM::InvalidTransition, "wrong state" unless may_mark_dispatched?
-      order = Zenventory.create_customer_order(
-        {
-          orderNumber: "hack.club/#{hc_id}",
-          customer: customer_attributes,
-          shippingAddress: shipping_address_attributes,
-          billingAddress: { sameAsShipping: true },
-          items: generate_order_items,
-        }
-      )
-      mark_dispatched!(order[:id])
+      lock!
+      mark_dispatched!(zenventory_order[:id])
+
+      labor_cents = Billing::Quote.new(billing_lines).now_cents
+      if billing_profile.present? && labor_cents.positive?
+        ledger_entries.create!(
+          billing_profile: billing_profile,
+          category: :labor,
+          amount_cents: labor_cents,
+        )
+      end
     end
+
+    # Charge after the transaction commits (don't roll back zenventory on HCB failure).
+    # Individual orders are charged immediately; bulk-upload orders are charged
+    # once per batch by Warehouse::Batch#process!.
+    charge_labor! unless bulk_upload?
 
     if notify_on_dispatch?
       Warehouse::OrderMailer.with(order: self).order_created.deliver_later
+    end
+  end
+
+  def billing_lines
+    labor = (labor_cost.to_d * 100).ceil
+    [
+      (Billing::Quote::Line.new(category: :labor, label: "labor for #{hc_id || "this order"}", when: :now, amount_cents: labor, count: 1) if labor.positive?),
+      Billing::Quote::Line.new(category: :postage, label: "postage, at cost, when it ships", when: :later, count: 1)
+    ].compact
+  end
+
+  # Non-strict: if a transfer is already in flight for this profile the entry
+  # stays unclaimed and the sweep picks it up.
+  def charge_labor!
+    return unless billing_profile.present?
+    Billing.charge!(ledger_entries.unclaimed.charges.labor, name: "Labor for #{hc_id}")
+  end
+
+  # Whether this order is allowed to accrue ledger entries at all.
+  def billable? = billing_profile.present? && created_at.present? && created_at > BILLING_EPOCH
+
+  def charge_postage!
+    return unless billing_profile.present?
+    Billing.charge!(ledger_entries.unclaimed.charges.postage, name: "Postage for #{hc_id}")
+  end
+
+  # A canceled order never gets picked or packed, so the labor obligation goes
+  # away with it — otherwise the entry sits there pending and
+  # BillingSettlementSweepJob charges for work nobody did.
+  #
+  # Unless a transfer already claimed the entry: then the money is moving (or
+  # has moved) and the ledger is append-only, so we leave it alone and note why
+  # the org was billed for a package that never shipped. Refunding that is a
+  # human decision — Billing.credit! — not something a cancellation webhook
+  # gets to make.
+  #
+  # Lives on the model, and hangs off the mark_canceled transition, so the web
+  # cancel path and Warehouse::UpdateCancellationsJob both get it.
+  def release_unearned_labor!
+    ledger_entries.labor.live.each do |entry|
+      if entry.pending? && !entry.hcb_transfer&.holds_entries?
+        entry.void!(reason: "order #{hc_id} canceled before it shipped")
+      else
+        entry.update!(metadata: entry.metadata.merge("canceled_after_charge" => true))
+      end
     end
   end
 
@@ -189,7 +286,7 @@ class Warehouse::Order < ApplicationRecord
         customer: customer_attributes,
         shippingAddress: shipping_address_attributes,
         billingAddress: { sameAsShipping: true },
-        items: generate_order_items_for_update,
+        items: generate_order_items_for_update
       }.compact_blank
       Zenventory.update_customer_order(zenventory_id, update_hash) unless update_hash.empty?
     rescue Zenventory::ZenventoryError => e
@@ -203,7 +300,6 @@ class Warehouse::Order < ApplicationRecord
     new(
       attributes.merge(
         template: template,
-        source_tag: template.source_tag,
       )
     )
   end
@@ -225,7 +321,7 @@ class Warehouse::Order < ApplicationRecord
     dispatched: "Sent to warehouse",
     mailed: "Shipped!",
     errored: "Errored?",
-    canceled: "Canceled",
+    canceled: "Canceled"
   }
 
   def humanized_state
@@ -252,6 +348,7 @@ class Warehouse::Order < ApplicationRecord
 
     event :mark_canceled do
       transitions from: :dispatched, to: :canceled
+      after { release_unearned_labor! }
     end
   end
 
@@ -281,7 +378,7 @@ class Warehouse::Order < ApplicationRecord
       {
         sku: line_item.sku.sku,
         price: line_item.sku.declared_unit_cost,
-        quantity: line_item.quantity,
+        quantity: line_item.quantity
       }
     end
   end
@@ -335,7 +432,7 @@ class Warehouse::Order < ApplicationRecord
     item_hash = {
       sku: line_item.sku.sku,
       price: line_item.sku.declared_unit_cost,
-      quantity: quantity || line_item.quantity,
+      quantity: quantity || line_item.quantity
     }
 
     # Only include ID if one was provided
@@ -344,9 +441,15 @@ class Warehouse::Order < ApplicationRecord
     item_hash
   end
 
-  def total_cost = [contents_cost, labor_cost, postage_cost].compact_blank.sum
+  def total_cost = [ contents_cost, labor_cost, postage_cost ].compact_blank.sum
 
   def to_param = hc_id
+
+  def origin_label
+    return "Manual" if manual?
+    return "API" if api?
+    origin_batch&.origin || "Bulk upload" if bulk_upload?
+  end
 
   private
 
@@ -368,8 +471,22 @@ class Warehouse::Order < ApplicationRecord
     end
   end
 
-  def inherit_batch_tags
-    return unless batch.present?
-    self.tags = (tags + batch.tags).uniq
+  def billing_profile_required
+    if Flipper.enabled?(:require_billing_profile_2026_09_08) && billing_profile.blank?
+      errors.add(:billing_profile, "is required for warehouse orders")
+    end
+  end
+
+  def billing_profile_belongs_to_user
+    if billing_profile.present? && billing_profile.user != user
+      errors.add(:billing_profile, "must belong to the order's user")
+    end
+  end
+
+  def set_created_via_defaults
+    if batch_id.present?
+      self.created_via = :bulk_upload
+    end
+    self.origin_batch_id ||= batch_id if bulk_upload?
   end
 end

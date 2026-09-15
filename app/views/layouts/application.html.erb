@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
     <title><%= content_for(:title) || "Theseus" %></title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -7,11 +7,10 @@
     <meta name="mobile-web-app-capable" content="yes">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
+    <%= action_cable_meta_tag %>
+
 
     <%= yield :head %>
-
-    <%# Enable PWA manifest for installable apps (make sure to enable in config/routes.rb too!) %>
-    <%#= tag.link rel: "manifest", href: pwa_manifest_path(format: :json) %>
 
     <link rel="icon" href="/favicon.ico" sizes="any">
     <link rel="icon" href="/icon.png" type="image/png">
@@ -20,25 +19,34 @@
     <%= vite_client_tag %>
     <%= vite_javascript_tag 'application' %>
     <%= vite_stylesheet_tag 'app_style.scss' %>
-
-
   </head>
 
-  <body<% if Rails.env.development? %> class="not_prod"<% end %>>
-    <% if Rails.env.development? %>
-      <div class="dev-border-overlay"></div>
-    <% end %>
-    
-    <div class="app-layout">
-      <%= render "shared/nav" %>
+  <body data-turbo="false">
+    <%= render Components::Shared::ActionBar.new %>
+    <%= render Components::Shared::Sidebar.new(current_path: request.path) %>
 
-      <div class="content-wrapper">
-        <main class="content-container">
-          <%= render "shared/hcb_connection_banner" %>
-          <%= render "shared/flash" %>
-          <%= yield %>
-        </main>
+    <div id="theseus-layout">
+      <div id="theseus-content">
+        <% if flash.any? %>
+          <% flash.each do |type, message| %>
+            <div class="banner banner-<%= flash_banner_class(type) %>"><%= message %></div>
+          <% end %>
+        <% end %>
+
+        <%= yield %>
       </div>
     </div>
+
+    <div id="theseus-env"><%= Rails.env %></div>
+
+    <% if current_user %>
+      <!-- erblint:disable ScriptType -->
+      <script type="application/json" id="kbar-data"><%= raw Shortcodes.kbar_data_for(current_user) %></script>
+      <script type="application/json" id="keyboard-shortcuts-data"><%= raw(keyboard_shortcuts_data.to_json) %></script>
+      <!-- erblint:enable ScriptType -->
+      <div data-svelte-component="command-palette"></div>
+      <div data-svelte-component="hints-modal"></div>
+      <div data-svelte-component="keyboard-shortcuts"></div>
+    <% end %>
   </body>
 </html>

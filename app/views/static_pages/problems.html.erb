@@ -1,113 +1,157 @@
-<h1>Problems</h1>
+<% content_for :title, "Problems" %>
+
+<div class="toolbar">
+  <strong class="text-title">Problems</strong>
+  <%= render Components::Shared::Jumpcode.new(path: problems_path) %>
+  <span class="spacer"></span>
+</div>
 
 <% if @blocking.empty? && @no_po_cost.empty? && @backordered.empty? && @stuck_orders.empty? %>
-  <p>no problems! go take a nap or something.</p>
+  <div class="empty-state">
+    <div class="batch-processed-icon text-success">✓</div>
+    <strong>No problems!</strong>
+    <p class="text-muted hint-tight">Go take a nap or something.</p>
+  </div>
 <% end %>
 
 <% if @blocking.any? %>
-  <h2 style="color: red;">Dispatch blockers</h2>
-  <p>These enabled SKUs have <strong>no cost data at all</strong> &mdash; no PO cost, no override. Any order containing them will refuse to dispatch.</p>
-  <table class="table-fixed text-left border border-gray-300 border-collapse" style="width: 100%;">
-    <tr>
-      <th class="border border-gray-300">SKU</th>
-      <th class="border border-gray-300">Name</th>
-      <th class="border border-gray-300">In stock</th>
-      <th class="border border-gray-300">Zenventory</th>
-    </tr>
-    <% @blocking.each do |sku| %>
-      <tr>
-        <td class="border border-gray-400"><%= link_to sku.sku, warehouse_sku_path(sku) %></td>
-        <td class="border border-gray-400"><%= sku.name %></td>
-        <td class="border border-gray-400"><%= sku.in_stock || "—" %></td>
-        <td class="border border-gray-400">
-          <% if sku.zenventory_url %>
-            <%= link_to "view", sku.zenventory_url, target: "_blank" %>
-          <% end %>
-        </td>
-      </tr>
-    <% end %>
-  </table>
+  <section class="mb-1">
+    <div class="flex-row">
+      <strong>Dispatch Blockers</strong>
+      <span class="badge badge-danger">blocking</span>
+    </div>
+    <p class="text-muted hint-tight">No cost data at all — orders with these SKUs will refuse to dispatch.</p>
+    <hr>
+    <table class="mt-half">
+      <thead>
+        <tr>
+          <th>SKU</th>
+          <th>Name</th>
+          <th>In Stock</th>
+          <th>Zenventory</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @blocking.each do |sku| %>
+          <tr>
+            <td><a href="<%= warehouse_sku_path(sku) %>" class="no-underline"><code><%= sku.sku %></code></a></td>
+            <td><%= sku.name %></td>
+            <td><%= sku.in_stock || "—" %></td>
+            <td>
+              <% if sku.zenventory_url %>
+                <a href="<%= sku.zenventory_url %>" target="_blank">view ↗</a>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </section>
 <% end %>
 
 <% if @no_po_cost.any? %>
-  <h2 style="color: orange;">Missing PO cost data</h2>
-  <p>These enabled SKUs have no <code>average_po_cost</code> from Zenventory but are covered by an override or other fallback. They work, but the PO data in Zenventory should be fixed.</p>
-  <table class="table-fixed text-left border border-gray-300 border-collapse" style="width: 100%;">
-    <tr>
-      <th class="border border-gray-300">SKU</th>
-      <th class="border border-gray-300">Name</th>
-      <th class="border border-gray-300">Declared cost</th>
-      <th class="border border-gray-300">Source</th>
-      <th class="border border-gray-300">Zenventory</th>
-    </tr>
-    <% @no_po_cost.each do |sku| %>
-      <tr>
-        <td class="border border-gray-400"><%= link_to sku.sku, warehouse_sku_path(sku) %></td>
-        <td class="border border-gray-400"><%= sku.name %></td>
-        <td class="border border-gray-400"><%= number_to_currency sku.declared_unit_cost %></td>
-        <td class="border border-gray-400">
-          <% if sku.declared_unit_cost_override&.positive? %>
-            override
-          <% else %>
-            ???
-          <% end %>
-        </td>
-        <td class="border border-gray-400">
-          <% if sku.zenventory_url %>
-            <%= link_to "view", sku.zenventory_url, target: "_blank" %>
-          <% end %>
-        </td>
-      </tr>
-    <% end %>
-  </table>
+  <section class="mb-1">
+    <div class="flex-row">
+      <strong>Missing PO Cost Data</strong>
+      <span class="badge badge-warning">degraded</span>
+    </div>
+    <p class="text-muted hint-tight">No <code>average_po_cost</code> from Zenventory — covered by fallback but should be fixed.</p>
+    <hr>
+    <table class="mt-half">
+      <thead>
+        <tr>
+          <th>SKU</th>
+          <th>Name</th>
+          <th>Cost</th>
+          <th>Source</th>
+          <th>Zenventory</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @no_po_cost.each do |sku| %>
+          <tr>
+            <td><a href="<%= warehouse_sku_path(sku) %>" class="no-underline"><code><%= sku.sku %></code></a></td>
+            <td><%= sku.name %></td>
+            <td><%= number_to_currency(sku.declared_unit_cost) %></td>
+            <td class="text-muted"><%= sku.declared_unit_cost_override&.positive? ? "override" : "???" %></td>
+            <td>
+              <% if sku.zenventory_url %>
+                <a href="<%= sku.zenventory_url %>" target="_blank">view ↗</a>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </section>
 <% end %>
 
 <% if @backordered.any? %>
-  <h2 style="color: orange;">Backordered without enough inbound</h2>
-  <p>These SKUs are oversold and don't have enough inbound stock to cover the deficit.</p>
-  <table class="table-fixed text-left border border-gray-300 border-collapse" style="width: 100%;">
-    <tr>
-      <th class="border border-gray-300">SKU</th>
-      <th class="border border-gray-300">Name</th>
-      <th class="border border-gray-300">In stock</th>
-      <th class="border border-gray-300">Inbound</th>
-      <th class="border border-gray-300">Shortfall</th>
-    </tr>
-    <% @backordered.each do |sku| %>
-      <tr>
-        <td class="border border-gray-400"><%= link_to sku.sku, warehouse_sku_path(sku) %></td>
-        <td class="border border-gray-400"><%= sku.name %></td>
-        <td class="border border-gray-400" style="color: red;"><%= sku.in_stock %></td>
-        <td class="border border-gray-400"><%= sku.inbound || 0 %></td>
-        <td class="border border-gray-400" style="color: red;"><%= sku.in_stock.abs - (sku.inbound || 0) %></td>
-      </tr>
-    <% end %>
-  </table>
+  <section class="mb-1">
+    <div class="flex-row">
+      <strong>Backordered Without Enough Inbound</strong>
+      <span class="badge badge-warning">warning</span>
+    </div>
+    <p class="text-muted hint-tight">Oversold and not enough inbound stock to cover the deficit.</p>
+    <hr>
+    <table class="mt-half">
+      <thead>
+        <tr>
+          <th>SKU</th>
+          <th>Name</th>
+          <th>In Stock</th>
+          <th>Inbound</th>
+          <th>Shortfall</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @backordered.each do |sku| %>
+          <tr>
+            <td><a href="<%= warehouse_sku_path(sku) %>" class="no-underline"><code><%= sku.sku %></code></a></td>
+            <td><%= sku.name %></td>
+            <td class="fw-600 text-danger"><%= sku.in_stock %></td>
+            <td><%= sku.inbound || 0 %></td>
+            <td class="fw-600 text-danger"><%= sku.in_stock.abs - (sku.inbound || 0) %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </section>
 <% end %>
 
 <% if @stuck_orders.any? %>
-  <h2 style="color: red;">Stuck orders</h2>
-  <p>These orders were dispatched to the warehouse over 2 weeks ago but never marked as mailed. Something might be wrong with the Zenventory sync, or they're stuck at the warehouse.</p>
-  <table class="table-fixed text-left border border-gray-300 border-collapse" style="width: 100%;">
-    <tr>
-      <th class="border border-gray-300">Order</th>
-      <th class="border border-gray-300">Recipient</th>
-      <th class="border border-gray-300">Dispatched</th>
-      <th class="border border-gray-300">Age</th>
-      <th class="border border-gray-300">Zenventory</th>
-    </tr>
-    <% @stuck_orders.each do |order| %>
-      <tr>
-        <td class="border border-gray-400"><%= link_to order.hc_id, warehouse_order_path(order) %></td>
-        <td class="border border-gray-400"><%= order.recipient_email %></td>
-        <td class="border border-gray-400"><%= order.dispatched_at.strftime("%b %d, %Y") %></td>
-        <td class="border border-gray-400" style="color: red;"><%= distance_of_time_in_words_to_now(order.dispatched_at) %> ago</td>
-        <td class="border border-gray-400">
-          <% if order.zenventory_url %>
-            <%= link_to "view", order.zenventory_url, target: "_blank" %>
-          <% end %>
-        </td>
-      </tr>
-    <% end %>
-  </table>
+  <section class="mb-1">
+    <div class="flex-row">
+      <strong>Stuck Orders</strong>
+      <span class="badge badge-danger">blocking</span>
+    </div>
+    <p class="text-muted hint-tight">Dispatched 2+ weeks ago, never marked mailed. Possible Zenventory sync issue.</p>
+    <hr>
+    <table class="mt-half">
+      <thead>
+        <tr>
+          <th>Order</th>
+          <th>Recipient</th>
+          <th>Dispatched</th>
+          <th>Age</th>
+          <th>Zenventory</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @stuck_orders.each do |order| %>
+          <tr>
+            <td><a href="<%= warehouse_order_path(order) %>" class="no-underline"><code><%= order.hc_id %></code></a></td>
+            <td><%= order.recipient_email %></td>
+            <td class="text-muted"><%= order.dispatched_at.strftime("%b %d") %></td>
+            <td class="text-danger"><%= distance_of_time_in_words_to_now(order.dispatched_at) %></td>
+            <td>
+              <% if order.zenventory_url %>
+                <a href="<%= order.zenventory_url %>" target="_blank">view ↗</a>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </section>
 <% end %>

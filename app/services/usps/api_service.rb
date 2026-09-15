@@ -55,119 +55,6 @@ class USPS::APIService
   ENVIRONMENT = Rails.env.production? ? :prod : :tem
 
   class << self
-    # Returns the best standardized address for a given address
-    # ---
-    # Standardizes street addresses including city and street abbreviations as well as providing missing information such as ZIP Code and ZIP+4.
-    #
-    # Must specify a street address, a state, and either a city or a ZIP Code.
-    # @param [String, nil] firm business name, helps USPS figure out suite numbers
-    # @param street_address address line 1
-    # @param secondary_address apt/ste/what have you
-    # @param city take a wild guess
-    # @param state gotta be a 2-letter abbreviation!
-    # @param urbanization only in puerto rico..?
-    # @param zip_code zip code, provide this if you didn't provide city!
-    # @param zip_plus_4 zip+4, why would you be standardizing an address if you knew this?
-    #
-    # returns something in the shape of:
-    #  {:firm=>"HACK CLUB",
-    #   :address=>
-    #    {:streetAddress=>"15 FALLS RD",
-    #     :streetAddressAbbreviation=>nil,
-    #     :secondaryAddress=>nil,
-    #     :city=>"SHELBURNE",
-    #     :cityAbbreviation=>nil,
-    #     :state=>"VT",
-    #     :postalCode=>nil,
-    #     :province=>nil,
-    #     :ZIPCode=>"05482",
-    #     :ZIPPlus4=>"7480",
-    #     :urbanization=>nil,
-    #     :country=>nil,
-    #     :countryISOCode=>nil},
-    #     :additionalInfo=>{:deliveryPoint=>"15",
-    #                       :carrierRoute=>"R003",
-    #                       :DPVConfirmation=>"Y",
-    #                       :DPVCMRA=>"N",
-    #                       :business=>"Y",
-    #                       :centralDeliveryPoint=>"N",
-    #                       :vacant=>"N"},
-    #   :corrections=>nil,
-    #   :matches=>nil}
-    def standardize_address(
-      firm: nil,
-      street_address:,
-      secondary_address: nil,
-      city: nil,
-      state:,
-      urbanization: nil,
-      zip_code: nil,
-      zip_plus_4: nil
-    )
-      conn.get("/addresses/v3/address", {
-        firm: firm,
-        streetAddress: street_address,
-        secondaryAddress: secondary_address,
-        city: city,
-        state: state,
-        urbanization: urbanization,
-        ZIPCode: zip_code,
-        ZIPPlus4: zip_plus_4,
-      }.compact_blank).body
-    end
-
-    # Returns the city and state for a given ZIP Code.
-    #  {:city=>"BURLINGTON", :state=>"VT", :ZIPCode=>"05401"}
-    # @param [String] zip zip code
-    def city_state_from_zip(zip)
-      conn.get("/addresses/v3/city-state", { ZIPCode: zip }).body
-    end
-
-    # Returns the ZIP Code; and ZIP + 4; corresponding to the given address, city, and state (use USPS state abbreviations).
-    # @param [String] firm Firm/business corresponding to the address.
-    # @param [String] street_address The number of a building along with the name of the road or street on which it is located.
-    # @param [String] secondary_address The secondary unit designator, such as apartment(APT) or suite(STE) number, defining the exact location of the address within a building.  For more information please see [Postal Explorer](https://pe.usps.com/text/pub28/28c2_003.htm).
-    # @param [String] city take a wild frickin guess
-    # @param [String] state capital two-character state code
-    # @param [String] zip_code why would you specify this
-    # @param [String] zip_plus_4 why on earth would you specify this
-    #
-    #  {:firm=>nil,
-    #   :address=>
-    #    {:streetAddress=>"15 FALLS RD",
-    #     :streetAddressAbbreviation=>nil,
-    #     :secondaryAddress=>nil,
-    #     :secondaryAddress=>nil,
-    #     :city=>"SHELBURNE",
-    #     :cityAbbreviation=>nil,
-    #     :state=>"VT",
-    #     :postalCode=>nil,
-    #     :province=>nil,
-    #     :ZIPCode=>"05482",
-    #     :ZIPPlus4=>"7480",
-    #     :urbanization=>nil,
-    #     :country=>nil,
-    #     :countryISOCode=>nil}}
-    def zip_code_for_address(
-      firm: nil,
-      street_address:,
-      secondary_address: nil,
-      city:,
-      state:,
-      zip_code: nil,
-      zip_plus_4: nil
-    )
-      conn.get("/addresses/v3/zipcode", {
-        firm: firm,
-        streetAddress: street_address,
-        secondaryAddress: secondary_address,
-        city: city,
-        state: state,
-        ZIPCode: zip_code,
-        ZIPPlus4: zip_plus_4,
-      }.compact_blank).body
-    end
-
     # buys a piece of domestic first-class postage!
     #
     # @param [String] payment_token USPS payment token
@@ -195,7 +82,7 @@ class USPS::APIService
         hasLooseItems: false,
         isRigid: false,
         isSelfMailer: false,
-        isBooklet: false,
+        isBooklet: false
       },
       receipt_option: "NONE",
       image_type: "TIFF",
@@ -211,17 +98,17 @@ class USPS::APIService
             length: length,
             height: height,
             thickness: thickness,
-            nonMachinableIndicators: non_machinable_indicators,
+            nonMachinableIndicators: non_machinable_indicators
           },
           imageInfo: {
             receiptOption: receipt_option,
             imageType: image_type,
-            labelType: label_type,
-          },
+            labelType: label_type
+          }
         },
         {
           "X-Payment-Authorization-Token" => payment_token,
-          "Accept" => "application/vnd.usps.labels+json",
+          "Accept" => "application/vnd.usps.labels+json"
         },
       ).body
     end
@@ -252,7 +139,7 @@ class USPS::APIService
         thickness: thickness,
         processingCategory: processing_category,
         mailingDate: Date.today.to_s,
-        nonMachinableIndicators: non_machinable_indicators.presence,
+        nonMachinableIndicators: non_machinable_indicators.presence
       }.compact_blank).body
     end
 
@@ -272,8 +159,49 @@ class USPS::APIService
         processingCategory: processing_category,
         destinationCountryCode: destination_country_code,
         mailingDate: Date.today.to_s,
-        nonMachinableIndicators: non_machinable_indicators.presence,
+        nonMachinableIndicators: non_machinable_indicators.presence
       }.compact_blank).body
+    end
+
+    # buys a piece of international first-class postage!
+    def create_fcmi_indicia(
+      payment_token:,
+      processing_category:,
+      weight:,
+      mailing_date:,
+      destination_country_code:,
+      length:,
+      height:,
+      thickness:,
+      non_machinable_indicators: nil,
+      receipt_option: "NONE",
+      image_type: "SVG",
+      label_type: "2X1.5LABEL"
+    )
+      conn.post(
+        "/international-labels/v3/indicia",
+        {
+          indiciaDescription: {
+            processingCategory: processing_category,
+            weight: weight,
+            mailingDate: mailing_date.to_s,
+            destinationCountryCode: destination_country_code,
+            length: length,
+            height: height,
+            thickness: thickness,
+            nonMachinableIndicators: non_machinable_indicators
+          }.compact,
+          imageInfo: {
+            receiptOption: receipt_option,
+            imageType: image_type,
+            labelType: label_type
+          }
+        },
+        {
+          "X-Payment-Authorization-Token" => payment_token,
+          "Accept" => "application/vnd.usps.labels+json"
+        },
+      ).body
     end
 
     private
@@ -283,7 +211,7 @@ class USPS::APIService
         prod: "apis",
         cat: "api-cat",
         cat_no_s: "api-cat",
-        tem: "apis-tem",
+        tem: "apis-tem"
       }[ENVIRONMENT]
       "https://#{host}.usps.com"
     end

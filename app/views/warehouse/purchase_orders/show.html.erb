@@ -1,86 +1,236 @@
-<% content_for :title, "Purchase Order ##{@purchase_order.id}" %>
+<% content_for :title, "Purchase Order #{@purchase_order.order_number.presence || "##{@purchase_order.id}"}" %>
 
-<div>
-  <h2 class="inline">
-    Purchase Order #<%= @purchase_order.id %>
-  </h2>
-  <%= render 'status_badge', purchase_order: @purchase_order %>
+<%
+  badge_class = {
+    "draft" => "badge",
+    "submitted" => "badge badge-info",
+    "approved" => "badge badge-success",
+    "returned" => "badge badge-warning",
+    "open" => "badge badge-info",
+    "completed" => "badge badge-success",
+    "deleted" => "badge badge-danger"
+  }[@purchase_order.status] || "badge"
+%>
+
+<div class="toolbar mb-0 no-border-bottom">
+  <div class="flex-row">
+    <a href="<%= warehouse_purchase_orders_path %>" class="text-muted no-underline">&larr; Purchase Orders</a>
+    <strong class="text-title"><%= @purchase_order.order_number.presence || "##{@purchase_order.id}" %></strong>
+    <span class="<%= badge_class %>"><%= @purchase_order.humanized_state %></span>
+  </div>
+  <div class="flex-row">
+    <span class="text-muted"><%= @purchase_order.supplier_name %></span>
+  </div>
+  <span class="spacer"></span>
+  <div class="flex-row">
+    <%# Draft + owner: Submit for Approval %>
+    <% if policy(@purchase_order).submit? && @purchase_order.draft? %>
+      <%= button_to "Submit for Approval", submit_for_approval_warehouse_purchase_order_path(@purchase_order), method: :post, class: "btn-success", data: { confirm: "Submit this purchase order for approval?" } %>
+    <% end %>
+
+    <%# Returned + owner: Revise, which puts it back in draft so it can be re-submitted %>
+    <% if policy(@purchase_order).revise? %>
+      <%= button_to "↩ Revise", revise_warehouse_purchase_order_path(@purchase_order), method: :post, class: "btn-success", data: { confirm: "Reopen this purchase order for revision?" } %>
+    <% end %>
+
+    <%# Submitted + czar: Approve / Return for Revision %>
+    <% if policy(@purchase_order).approve? %>
+      <%= button_to "✓ Approve", approve_warehouse_purchase_order_path(@purchase_order), method: :post, class: "btn-success", data: { confirm: "Approve this purchase order?" } %>
+    <% end %>
+    <% if policy(@purchase_order).return_for_revision? %>
+      <details class="popover">
+        <summary tabindex="0" class="btn-warning pointer">↩ Return</summary>
+        <div class="popover-body">
+          <form action="<%= reject_warehouse_purchase_order_path(@purchase_order) %>" method="post">
+            <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>">
+            <div class="mb-half">
+              <label class="text-muted label-block">Notes for drafter</label>
+              <textarea name="reviewer_notes" rows="3" class="w-100" placeholder="What needs to be revised?"></textarea>
+            </div>
+            <button type="submit" class="btn-warning" onclick="return confirm('Return this purchase order for revision?')">↩ Return for Revision</button>
+          </form>
+        </div>
+      </details>
+    <% end %>
+
+    <%# Approved + czar + all SKUs resolved: Send to Zenventory %>
+    <% if policy(@purchase_order).send_to_zenventory? && @purchase_order.all_skus_resolved? %>
+      <%= button_to "↑ Send to Zenventory", send_to_zenventory_warehouse_purchase_order_path(@purchase_order), method: :post, class: "btn-success" %>
+    <% end %>
+
+    <%# Approved but blocked on SKUs: show warning %>
+    <% if @purchase_order.blocked_on_skus? %>
+      <span class="badge badge-warning">Waiting on <%= @purchase_order.unresolved_sku_requests.count %> SKU request<%= @purchase_order.unresolved_sku_requests.count == 1 ? "" : "s" %></span>
+    <% end %>
+
+    <% if policy(@purchase_order).edit? %>
+      <a href="<%= edit_warehouse_purchase_order_path(@purchase_order) %>">&#x270E; Edit</a>
+    <% end %>
+    <% if @purchase_order.zenventory_url.present? %>
+      <a href="<%= @purchase_order.zenventory_url %>" target="_blank">&nearr; Zenventory</a>
+    <% end %>
+  </div>
 </div>
 
-<div class="my-4">
-  <b>Supplier:</b> <%= @purchase_order.supplier_name %><br>
-  <% if @purchase_order.supplier_id.present? %>
-    <b>Supplier ID:</b> <%= @purchase_order.supplier_id %><br>
-  <% end %>
-  <% if @purchase_order.order_number.present? %>
-    <b>Order Number:</b> <%= @purchase_order.order_number %><br>
-  <% end %>
-  <% if @purchase_order.required_by_date.present? %>
-    <b>Required By:</b> <%= @purchase_order.required_by_date.strftime("%B %d, %Y") %><br>
-  <% end %>
-  <b>Created By:</b> <%= render "shared/user_mention", user: @purchase_order.user if @purchase_order.user %><br>
-  <b>Created At:</b> <%= @purchase_order.created_at.strftime("%B %d, %Y at %I:%M %p") %><br>
-</div>
-
-<% if @purchase_order.notes.present? %>
-  <div class="my-4">
-    <b>Notes:</b><br>
-    <%= simple_format(@purchase_order.notes) %>
+<%# Returned banner %>
+<% if @purchase_order.returned? %>
+  <div class="banner banner-warning mb-1">
+    <strong>Returned for revision<%= @purchase_order.reviewed_by ? " by #{@purchase_order.reviewed_by.username || @purchase_order.reviewed_by.email}" : "" %>.</strong>
+    <% if @purchase_order.reviewer_notes.present? %>
+      <div class="mt-quarter"><strong>Notes:</strong> <%= @purchase_order.reviewer_notes %></div>
+    <% end %>
   </div>
 <% end %>
 
-<div class="my-4">
-  <b>Line Items:</b>
-  <table class="table-fixed text-left border border-gray-300 border-collapse mt-2">
-    <thead>
-      <tr>
-        <th class="border border-gray-300 p-2">SKU</th>
-        <th class="border border-gray-300 p-2">Quantity</th>
-        <th class="border border-gray-300 p-2">Unit Cost</th>
-        <th class="border border-gray-300 p-2">Line Total</th>
-      </tr>
-    </thead>
-    <tbody>
-      <% @purchase_order.line_items.each do |li| %>
-        <tr>
-          <td class="border border-gray-400 p-2">
-            <%= link_to li.sku.name, warehouse_sku_path(li.sku), target: '_blank' %>
-            <span class="text-gray-500">(<%= li.sku.sku %>)</span>
-          </td>
-          <td class="border border-gray-400 p-2"><%= li.quantity %></td>
-          <td class="border border-gray-400 p-2"><%= number_to_currency(li.unit_cost) %></td>
-          <td class="border border-gray-400 p-2"><%= number_to_currency((li.unit_cost || 0) * li.quantity) %></td>
-        </tr>
+<div class="show-layout">
+  <div class="show-main">
+    <section class="mb-1">
+      <strong>Details</strong>
+      <hr>
+      <div class="detail-grid mt-half">
+        <span class="detail-label">Supplier</span>
+        <span><%= @purchase_order.supplier_name %></span>
+        <% if @purchase_order.supplier_id.present? %>
+          <span class="detail-label">Supplier ID</span>
+          <span><code><%= @purchase_order.supplier_id %></code></span>
+        <% end %>
+        <span class="detail-label">Created</span>
+        <span><%= @purchase_order.created_at.strftime("%b %d, %Y %H:%M") %></span>
+        <span class="detail-label">Created by</span>
+        <span><%= @purchase_order.user&.email || "—" %></span>
+        <% if @purchase_order.order_number.present? %>
+          <span class="detail-label">Order Number</span>
+          <span><code><%= @purchase_order.order_number %></code></span>
+        <% end %>
+        <% if @purchase_order.required_by_date.present? %>
+          <span class="detail-label">Required by</span>
+          <span><%= @purchase_order.required_by_date.strftime("%b %d, %Y") %></span>
+        <% end %>
+        <% if @purchase_order.reviewed_by.present? %>
+          <span class="detail-label">Reviewed by</span>
+          <span><%= @purchase_order.reviewed_by.username || @purchase_order.reviewed_by.email %></span>
+        <% end %>
+        <% if @purchase_order.reviewed_at.present? %>
+          <span class="detail-label">Reviewed at</span>
+          <span><%= @purchase_order.reviewed_at.strftime("%b %d, %Y %H:%M") %></span>
+        <% end %>
+        <span class="detail-label">Zenventory ID</span>
+        <span><code><%= @purchase_order.zenventory_id || "—" %></code></span>
+      </div>
+      <% if @purchase_order.notes.present? %>
+        <hr class="mt-half">
+        <div class="mt-half">
+          <span class="detail-label">Notes</span>
+          <div class="mt-quarter"><%= simple_format(@purchase_order.notes) %></div>
+        </div>
       <% end %>
-      <tr>
-        <td colspan="3" class="border border-gray-400 p-2 text-right"><b>Total:</b></td>
-        <td class="border border-gray-400 p-2"><b><%= number_to_currency(@purchase_order.total_cost) %></b></td>
-      </tr>
-    </tbody>
-  </table>
+    </section>
+
+    <%# Blocking SKU requests section %>
+    <% if @purchase_order.blocked_on_skus? || @purchase_order.has_returned_sku_requests? %>
+      <section class="mb-1 sku-requests-alert">
+        <strong class="text-warning">&#x26A0; SKU Requests Requiring Attention</strong>
+        <% if @purchase_order.has_returned_sku_requests? %>
+          <div class="text-danger mt-quarter">Some SKU requests have been returned and need to be revised before this purchase order can proceed.</div>
+        <% elsif @purchase_order.blocked_on_skus? %>
+          <div class="text-muted mt-quarter">This purchase order is approved but waiting on the following SKU requests before it can be sent to Zenventory.</div>
+        <% end %>
+        <hr>
+        <% @purchase_order.unresolved_sku_requests.each do |req| %>
+          <div class="sku-request-row">
+            <div class="flex-1">
+              <a href="<%= warehouse_sku_request_path(req) %>" class="fw-600 no-underline"><%= req.name %></a>
+              <% if req.returned? %>
+                <span class="badge badge-danger ml-quarter">Returned</span>
+              <% else %>
+                <span class="badge badge-info ml-quarter"><%= req.aasm_state.humanize %></span>
+              <% end %>
+              <% if req.suggested_sku_code.present? %>
+                <span class="text-muted ml-quarter">suggested: <code><%= req.suggested_sku_code %></code></span>
+              <% end %>
+            </div>
+            <% if current_user.warehouse_czar? && req.aasm_state == "submitted" %>
+              <div class="cost-input-row">
+                <%= form_with url: approve_warehouse_sku_request_path(req), method: :post, local: true do %>
+                  <input type="text" name="assigned_sku_code" placeholder="SKU code" required class="sku-code-input">
+                  <button type="submit" class="btn-success btn-sm" onclick="return confirm('Approve this SKU request?')">✓ Approve</button>
+                <% end %>
+              </div>
+            <% end %>
+          </div>
+        <% end %>
+      </section>
+    <% end %>
+
+    <section class="mb-1">
+      <strong>Line Items</strong>
+      <hr>
+      <table class="w-100 mt-half">
+        <thead>
+          <tr>
+            <th class="text-left">SKU</th>
+            <th class="text-right">Quantity</th>
+            <th class="text-right">Unit Cost</th>
+            <th class="text-right">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% @purchase_order.line_items.includes(:sku, :sku_request).each do |li| %>
+            <tr>
+              <td class="cell-pad">
+                <% if li.sku.present? %>
+                  <a href="<%= warehouse_sku_path(li.sku) %>" class="no-underline"><%= li.sku.name %></a>
+                  <span class="text-muted"> (<code><%= li.sku.sku %></code>)</span>
+                <% elsif li.sku_request.present? %>
+                  <a href="<%= warehouse_sku_request_path(li.sku_request) %>" class="no-underline"><%= li.sku_request.name %></a>
+                  <% if li.sku_request.returned? %>
+                    <span class="badge badge-danger ml-quarter">returned</span>
+                  <% elsif li.sku_request.aasm_state.in?(%w[submitted approved]) %>
+                    <span class="badge badge-info ml-quarter">pending</span>
+                  <% else %>
+                    <span class="badge ml-quarter"><%= li.sku_request.aasm_state %></span>
+                  <% end %>
+                <% else %>
+                  <span class="text-muted">Unknown</span>
+                <% end %>
+              </td>
+              <td class="num-cell"><%= li.quantity %></td>
+              <td class="num-cell"><%= number_to_currency(li.unit_cost) %></td>
+              <td class="num-cell"><%= number_to_currency((li.unit_cost || 0) * li.quantity) %></td>
+            </tr>
+          <% end %>
+        </tbody>
+        <tfoot>
+          <tr class="fw-bold">
+            <td class="cell-pad">Total</td>
+            <td class="num-cell"><%= @purchase_order.line_items.sum(&:quantity) %></td>
+            <td></td>
+            <td class="num-cell"><%= number_to_currency(@purchase_order.total_cost) %></td>
+          </tr>
+        </tfoot>
+      </table>
+    </section>
+
+    <%= render partial: "admin_inspector", locals: { record: @purchase_order } %>
+  </div>
+
+  <div class="show-sidebar">
+    <section class="mb-1">
+      <strong>Actions</strong>
+      <hr>
+      <div class="mt-half">
+        <% if policy(@purchase_order).sync? %>
+          <%= form_with url: sync_warehouse_purchase_order_path(@purchase_order), method: :post, local: true, class: "form-inline" do %>
+            <button type="submit" class="btn-sm w-100 mb-half">⟳ Sync from Zenventory</button>
+          <% end %>
+        <% end %>
+        <% if @purchase_order.zenventory_id.present? %>
+          <a href="https://app.zenventory.com/printing/printpurchaseorder.php?poid=<%= @purchase_order.zenventory_id %>" target="_blank" class="mb-half block-link"><button class="btn-sm w-100">⎘ Download PDF</button></a>
+        <% end %>
+        <% if policy(@purchase_order).destroy? %>
+          <%= button_to "✕ Delete", warehouse_purchase_order_path(@purchase_order), method: :delete, class: "btn-danger btn-sm", form_class: "form-inline", data: { confirm: "Delete this purchase order?" } %>
+        <% end %>
+      </div>
+    </section>
+  </div>
 </div>
-
-<% zenv_link @purchase_order %>
-
-<div class="my-4 space-x-2">
-  <% if policy(@purchase_order).send_to_zenventory? && @purchase_order.may_mark_open? %>
-    <%= button_to "Send to Zenventory", send_to_zenventory_warehouse_purchase_order_path(@purchase_order), method: :post %>
-  <% end %>
-
-  <% if policy(@purchase_order).sync? %>
-    <%= button_to "Sync from Zenventory", sync_warehouse_purchase_order_path(@purchase_order), method: :post %>
-  <% end %>
-
-  <% if policy(@purchase_order).destroy? %>
-    <%= button_to "Delete", warehouse_purchase_order_path(@purchase_order), method: :delete, data: { confirm: "Are you sure?" } %>
-  <% end %>
-</div>
-
-<div>
-  <% if policy(@purchase_order).edit? %>
-    <%= link_to "Edit this purchase order", edit_warehouse_purchase_order_path(@purchase_order) %><br>
-  <% end %>
-  <%= link_to "Back to purchase orders", warehouse_purchase_orders_path %>
-</div>
-
-<%= render partial: "admin_inspector", locals: { record: @purchase_order } %>

@@ -24,14 +24,6 @@ module USPS
         end
       end
 
-      def stamp_price(processing_category, weight, country, non_machinable = false)
-        if country == "US"
-          domestic_stamp_price(processing_category, weight, non_machinable)
-        else
-          fcmi_price(processing_category, weight, country, non_machinable)
-        end
-      end
-
       private
 
       def extract_domestic_rate(price_type, processing_category, weight, non_machinable)
@@ -59,7 +51,7 @@ module USPS
       end
 
       def cache_key(type, processing_category, weight, country: nil, non_machinable: false)
-        parts = ["usps_rate", type, processing_category, "#{weight}oz"]
+        parts = [ "usps_rate", type, processing_category, "#{weight}oz" ]
         parts << country.to_s.downcase if country
         parts << "nm" if non_machinable
         parts.join("_")

@@ -42,15 +42,30 @@
 #  fk_rails_...  (usps_payment_account_id => usps_payment_accounts.id)
 #
 class Letter::InstantQueue < Letter::Queue
+  # Postage may have been sold, or money may have moved and we don't know
+  # which way. The letter and everything pointing at it stays exactly where it
+  # is; a human has to look. Retrying is not safe, so the idempotency key
+  # stays burned on purpose.
+  class PurchaseUncertain < StandardError
+    attr_reader :letter, :cause_error
+
+    def initialize(letter, cause_error)
+      @letter = letter
+      @cause_error = cause_error
+      super("postage for #{letter.public_id} is in an unknown state: #{cause_error.message}")
+    end
+  end
+
   # Validations
   validates :template, presence: true
   validates :postage_type, presence: true, inclusion: { in: %w[indicia stamps international_origin] }
   validates :usps_payment_account_id, presence: true, if: :indicia?
   validates :hcb_payment_account_id, presence: true, if: :indicia?
+  validate :billing_profile_belongs_to_user
 
   # Associations
   belongs_to :usps_payment_account, class_name: "USPS::PaymentAccount", optional: true
-  belongs_to :hcb_payment_account, class_name: "HCB::PaymentAccount", optional: true
+  belongs_to :billing_profile, class_name: "BillingProfile", foreign_key: :hcb_payment_account_id, optional: true
 
   # Scopes
   default_scope { where(type: "Letter::InstantQueue") }
@@ -58,116 +73,81 @@ class Letter::InstantQueue < Letter::Queue
   # Methods
   def indicia? = postage_type == "indicia"
 
+  def billing_profile_belongs_to_user
+    if billing_profile.present? && billing_profile.user != user
+      errors.add(:billing_profile, "must belong to the queue's user")
+    end
+  end
+
+  # What each submitted letter bills the queue's owner (US rate; international varies).
+  def billing_lines
+    return [] unless indicia?
+    category = Letter.processing_categories.key(letter_processing_category) || letter_processing_category
+    cents = (USPS::PricingEngine.metered_price(category, letter_weight, false).to_d * 100).ceil
+    [ Billing::Quote::Line.new(category: :indicia, label: "postage per US letter submitted", when: :later, amount_cents: cents, count: 1) ]
+  rescue USPS::USPSError, Faraday::Error, OAuth2::Error, RuntimeError => e
+    Rails.logger.warn("[Letter::InstantQueue] could not price #{public_id}: #{e.class}: #{e.message}")
+    [ Billing::Quote::Line.new(category: :indicia, label: "postage per letter submitted, at cost", when: :later, count: 1) ]
+  end
+
   def process_letter_instantly!(address, params = {})
     Rails.logger.info("Starting process_letter_instantly! with postage_type: #{postage_type}")
 
-    letter = ActiveRecord::Base.transaction do
-      # Create letter directly in pending state
-      letter = letters.build(
-        address: address,
-        height: letter_height,
-        width: letter_width,
-        weight: letter_weight,
-        return_address: letter_return_address,
-        return_address_name: letter_return_address_name,
-        usps_mailer_id: letter_mailer_id,
-        processing_category: letter_processing_category,
-        tags: tags,
-        aasm_state: "pending",
-        postage_type: postage_type,
-        mailing_date: Date.current + 1.day,
-        **params,
-      )
-      letter.save!
-      Rails.logger.info("Created letter #{letter.id} with postage_type: #{letter.postage_type}")
+    letter = letters.create!(
+      address: address,
+      height: letter_height,
+      width: letter_width,
+      weight: letter_weight,
+      return_address: letter_return_address,
+      return_address_name: letter_return_address_name,
+      usps_mailer_id: letter_mailer_id,
+      processing_category: letter_processing_category,
+      tags: tags,
+      aasm_state: "pending",
+      postage_type: postage_type,
+      mailing_date: Date.current + 1.day,
+      **params,
+    )
 
-      # Purchase indicia if needed
-      if indicia?
-        Rails.logger.info("Creating indicia for letter #{letter.id}")
-        begin
-          usps_payment_account = USPS::PaymentAccount.find(usps_payment_account_id)
-          Rails.logger.info("Found USPS payment account #{usps_payment_account.id}")
-
-          indicium = USPS::Indicium.create!(
-            letter: letter,
-            payment_account: usps_payment_account,
-            hcb_payment_account: hcb_payment_account,
-            mailing_date: letter.mailing_date,
-          )
-          Rails.logger.info("Created indicium #{indicium.public_id} for letter #{letter.id}")
-
-          cost_cents = (letter.postage * 100).ceil
-
-          Rails.logger.info("Using HCB payment account #{hcb_payment_account.id} for letter #{letter.id}")
-          transfer_service = HCB::TransferService.new(
-            hcb_payment_account: hcb_payment_account,
-            amount_cents: cost_cents,
-            name: "Postage for #{letter.public_id} #{indicium.public_id} (#{slug}) #{Rails.application.routes.url_helpers.letter_path(letter)}",
-            memo: "[theseus] postage for a #{letter.processing_category} via queue #{name}",
-          )
-          transfer = transfer_service.call
-          unless transfer
-            indicium.destroy!
-            raise "HCB payment failed: #{transfer_service.errors.join(', ')}"
-          end
-
-          indicium.update!(hcb_transfer_id: transfer.id)
-
-          begin
-            indicium.buy!
-          rescue => e
-            if indicium.raw_json_response.present?
-              # USPS already sold us postage — do NOT destroy or refund.
-              Sentry.capture_exception(e, level: :fatal, tags: { money: true, critical: true },
-                extra: { indicium_id: indicium.id, letter_id: letter.id, response: indicium.raw_json_response })
-              raise e
-            else
-              # API call never went through, safe to clean up.
-              HCB::PaymentAccount.refund_to_organization!(
-                organization_id: hcb_payment_account.organization_id,
-                amount_cents: cost_cents,
-                name: "Refund for #{letter.public_id} #{indicium.public_id} #{Rails.application.routes.url_helpers.letter_path(letter)}",
-                memo: "[theseus] postage refund for a #{letter.processing_category}",
-              )
-              indicium.destroy!
-              raise e
-            end
-          end
-          Rails.logger.info("Successfully bought indicium for letter #{letter.id}")
-
-          letter.reload
-          if letter.usps_indicium.present?
-            Rails.logger.info("Verified indicium #{letter.usps_indicium.id} is associated with letter #{letter.id}")
-          else
-            Rails.logger.error("Indicium was not properly associated with letter #{letter.id} after creation")
-            Rails.logger.error("Letter postage_type: #{letter.postage_type}")
-            Rails.logger.error("Letter mailing_date: #{letter.mailing_date}")
-            raise "Failed to associate indicium with letter"
-          end
-        rescue => e
-          Rails.logger.error("Failed to create indicium for letter #{letter.id}: #{e.message}")
-          raise e
-        end
+    if indicia?
+      begin
+        USPS::IndiciumPurchase.new(
+          letter: letter,
+          usps_account: USPS::PaymentAccount.find(usps_payment_account_id),
+          billing_profile: billing_profile,
+          name_suffix: " via queue #{name} (#{slug})",
+        ).call
+      rescue Billing::Unconfirmed, USPS::IndiciumPurchase::Unrecorded => e
+        raise PurchaseUncertain.new(letter, e)
+      rescue Billing::Rejected, Billing::InFlight, USPS::IndiciumPurchase::PurchaseFailed
+        # Nothing was mailed: Rejected/InFlight never moved money, and
+        # PurchaseFailed means USPS sold us nothing and the charge was credited
+        # back. Free the idempotency key so the caller's retry isn't a
+        # permanent 400.
+        release_never_sent!(letter)
+        raise
       end
-      letter
     end
 
-    # Verify indicium exists before generating label if using indicia
-    letter.reload
-    Rails.logger.info("Before generate_label - Letter #{letter.id} postage_type: #{letter.postage_type}")
-    Rails.logger.info("Before generate_label - Letter #{letter.id} has indicium: #{letter.usps_indicium.present?}")
-
-    if indicia? && !letter.usps_indicium.present?
-      Rails.logger.error("No indicium found for letter #{letter.id} before generating label")
-      Rails.logger.error("Letter postage_type: #{letter.postage_type}")
-      Rails.logger.error("Letter mailing_date: #{letter.mailing_date}")
-      raise "No indicium found for letter before generating label"
-    end
-
+    # Phase 3: post-processing
     letter.generate_label(
       template: template,
       include_qr_code: include_qr_code,
     )
     letter
+  end
+
+  private
+
+  # Nothing was mailed, so the caller must be able to retry with the same
+  # idempotency key. Drop the letter if the purchase left nothing behind;
+  # otherwise the indicium and its ledger entries are the record that money
+  # moved and came home, so keep the row and only give the key up.
+  def release_never_sent!(letter)
+    if letter.reload.usps_indicium.nil?
+      letter.destroy!
+    else
+      letter.update_columns(idempotency_key: nil)
+    end
   end
 end

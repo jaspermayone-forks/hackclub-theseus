@@ -8,22 +8,28 @@
 #  notes            :text
 #  order_number     :string
 #  required_by_date :date
+#  reviewed_at      :datetime
+#  reviewer_notes   :text
 #  status           :string           default("draft")
+#  submitted_at     :datetime
 #  supplier_name    :string
 #  created_at       :datetime         not null
 #  updated_at       :datetime         not null
+#  reviewed_by_id   :bigint
 #  supplier_id      :integer
 #  user_id          :bigint           not null
 #  zenventory_id    :integer
 #
 # Indexes
 #
-#  index_warehouse_purchase_orders_on_order_number   (order_number)
-#  index_warehouse_purchase_orders_on_user_id        (user_id)
-#  index_warehouse_purchase_orders_on_zenventory_id  (zenventory_id) UNIQUE
+#  index_warehouse_purchase_orders_on_order_number    (order_number)
+#  index_warehouse_purchase_orders_on_reviewed_by_id  (reviewed_by_id)
+#  index_warehouse_purchase_orders_on_user_id         (user_id)
+#  index_warehouse_purchase_orders_on_zenventory_id   (zenventory_id) UNIQUE
 #
 # Foreign Keys
 #
+#  fk_rails_...  (reviewed_by_id => users.id)
 #  fk_rails_...  (user_id => users.id)
 #
 class Warehouse::PurchaseOrder < ApplicationRecord
@@ -31,8 +37,17 @@ class Warehouse::PurchaseOrder < ApplicationRecord
 
   include AASM
   include HasZenventoryUrl
+  include PgSearch::Model
+
+  pg_search_scope :search,
+    against: %i[supplier_name order_number notes],
+    using: {
+      tsearch: { prefix: true }
+    }
+
 
   belongs_to :user
+  belongs_to :reviewed_by, class_name: "User", optional: true
   has_many :line_items, class_name: "Warehouse::PurchaseOrderLineItem", foreign_key: :purchase_order_id, dependent: :destroy, inverse_of: :purchase_order
 
   accepts_nested_attributes_for :line_items, allow_destroy: true, reject_if: :all_blank
@@ -44,7 +59,10 @@ class Warehouse::PurchaseOrder < ApplicationRecord
 
   HUMANIZED_STATES = {
     draft: "Draft",
-    open: "Open",
+    submitted: "Submitted",
+    approved: "Approved",
+    returned: "Returned for Revision",
+    open: "Sent to Zenventory",
     completed: "Completed",
     deleted: "Deleted"
   }.freeze
@@ -55,12 +73,34 @@ class Warehouse::PurchaseOrder < ApplicationRecord
 
   aasm column: :status, timestamps: true do
     state :draft, initial: true
+    state :submitted
+    state :approved
+    state :returned
     state :open
     state :completed
     state :deleted
 
+    event :submit_for_approval do
+      transitions from: :draft, to: :submitted
+      after { update!(submitted_at: Time.current) }
+    end
+
+    event :approve do
+      transitions from: :submitted, to: :approved
+      after { update!(reviewed_at: Time.current) }
+    end
+
+    event :return_for_revision do
+      transitions from: :submitted, to: :returned
+      after { update!(reviewed_at: Time.current) }
+    end
+
+    event :revise do
+      transitions from: %i[returned submitted approved], to: :draft
+    end
+
     event :mark_open do
-      transitions from: :draft, to: :open
+      transitions from: :approved, to: :open, guard: :all_skus_resolved?
     end
 
     event :mark_completed do
@@ -68,12 +108,20 @@ class Warehouse::PurchaseOrder < ApplicationRecord
     end
 
     event :mark_deleted do
-      transitions from: %i[draft open], to: :deleted
+      transitions from: %i[draft submitted approved returned open], to: :deleted
     end
   end
 
   def draft?
     status == "draft"
+  end
+
+  def submitted?
+    status == "submitted"
+  end
+
+  def approved?
+    status == "approved"
   end
 
   def open?
@@ -84,27 +132,47 @@ class Warehouse::PurchaseOrder < ApplicationRecord
     status == "completed"
   end
 
+  def returned?
+    status == "returned"
+  end
+
+  def all_skus_resolved?
+    line_items.all? { |li| li.sku_id.present? }
+  end
+
+  def unresolved_sku_requests
+    line_items.includes(:sku_request).where(sku_id: nil).filter_map(&:sku_request)
+  end
+
+  def blocked_on_skus?
+    approved? && !all_skus_resolved?
+  end
+
+  def has_returned_sku_requests?
+    line_items.joins(:sku_request).where(sku_id: nil)
+      .where(warehouse_sku_requests: { aasm_state: "returned" }).any?
+  end
+
   def dispatch!
-    ActiveRecord::Base.transaction do
-      raise AASM::InvalidTransition, "wrong state" unless may_mark_open?
+    raise "Not all SKUs resolved" unless all_skus_resolved?
+    raise AASM::InvalidTransition, "wrong state" unless may_mark_open?
 
-      po_params = {
-        supplier: { id: supplier_id, name: supplier_name }.compact,
-        requiredByDate: required_by_date&.iso8601,
-        notes: notes,
-        items: line_items.map do |li|
-          {
-            sku: li.sku.sku,
-            quantity: li.quantity,
-            unitCost: li.unit_cost&.to_f
-          }.compact
-        end
-      }.compact
+    po_params = {
+      supplier: { id: supplier_id, name: supplier_name }.compact,
+      requiredByDate: required_by_date&.iso8601,
+      notes: notes,
+      items: line_items.map do |li|
+        {
+          sku: li.sku.sku,
+          quantity: li.quantity,
+          unitCost: li.unit_cost&.to_f
+        }.compact
+      end
+    }.compact
 
-      response = Zenventory.create_purchase_order(po_params)
-      update!(zenventory_id: response[:id], order_number: response[:orderNumber])
-      mark_open!
-    end
+    response = Zenventory.create_purchase_order(po_params)
+    update!(zenventory_id: response[:id], order_number: response[:orderNumber])
+    mark_open!
   end
 
   def sync_from_zenventory!
@@ -118,8 +186,15 @@ class Warehouse::PurchaseOrder < ApplicationRecord
     self.notes = zenv_po[:notes] if zenv_po[:notes].present?
     self.required_by_date = Date.parse(zenv_po[:requiredByDate]) if zenv_po[:requiredByDate].present?
 
-    zenv_status = zenv_po[:status]&.downcase
-    self.status = zenv_status if %w[draft open completed deleted].include?(zenv_status)
+    self.status = if zenv_po[:deleted]
+                    "deleted"
+    elsif zenv_po[:completed]
+                    "completed"
+    elsif zenv_po[:draft]
+                    "draft"
+    else
+                    "open"
+    end
 
     save!
   end

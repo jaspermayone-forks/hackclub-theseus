@@ -1,79 +1,67 @@
-<% content_for :title, "Buy Indicia - #{@letter.public_id}" %>
+<% content_for :title, "Buy Indicia — #{@letter.public_id}" %>
 
-<div class="container">
-  <header class="page-header mb-6">
-    <div class="flex items-center gap-4">
-      <%= link_to "← Back", @letter, class: "text-gray-500 hover:text-gray-700" %>
-      <h1>Buy Indicia</h1>
-    </div>
-  </header>
+<div class="toolbar mb-0 no-border-bottom">
+  <div class="flex-row">
+    <a href="<%= letter_path(@letter) %>" class="text-muted no-underline">← <%= @letter.public_id %></a>
+    <strong class="text-title">Buy Indicia</strong>
+  </div>
+</div>
 
-  <div class="max-w-lg">
-    <article class="mb-6">
-      <header><h2>Letter Details</h2></header>
-      <div class="p-4">
-        <dl class="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <dt class="text-gray-500">Recipient</dt>
-            <dd class="font-medium"><%= @letter.address.name_line %></dd>
+<div class="show-layout">
+  <div class="show-main">
+    <section class="mb-1">
+      <strong>Letter Details</strong>
+      <hr>
+      <div class="detail-grid mt-half">
+        <span class="detail-label">Recipient</span>
+        <span><%= @letter.address.name_line %></span>
+        <span class="detail-label">Destination</span>
+        <span><%= @letter.address.city %>, <%= @letter.address.state %></span>
+        <span class="detail-label">Dimensions</span>
+        <span><%= @letter.height %> × <%= @letter.width %> in, <%= @letter.weight %> oz</span>
+      </div>
+      <% if @letter.non_machinable? %>
+        <hr class="mt-half">
+        <div class="mt-half">
+          <span class="badge badge-warning">⚠ Non-machinable surcharge applies</span>
+        </div>
+      <% end %>
+    </section>
+
+    <section class="mb-1">
+      <strong>Purchase Postage</strong>
+      <hr>
+      <div class="mt-half">
+        <%= form_with(url: buy_indicia_letter_path(@letter), method: :post) do |form| %>
+          <div class="mb-half">
+            <label class="text-muted label-block">USPS Payment Account</label>
+            <select name="usps_payment_account_id" required class="w-100">
+              <option value="">Select account…</option>
+              <% USPS::PaymentAccount.all.each do |account| %>
+                <option value="<%= account.id %>" <%= "selected" if account.id == USPS::PaymentAccount.first&.id %>><%= account.name %></option>
+              <% end %>
+            </select>
           </div>
-          <div>
-            <dt class="text-gray-500">Destination</dt>
-            <dd><%= @letter.address.city %>, <%= @letter.address.state %></dd>
-          </div>
-          <div>
-            <dt class="text-gray-500">Dimensions</dt>
-            <dd><%= @letter.height %>" × <%= @letter.width %>"</dd>
-          </div>
-          <div>
-            <dt class="text-gray-500">Weight</dt>
-            <dd><%= @letter.weight %> oz</dd>
-          </div>
-        </dl>
-        <% if @letter.non_machinable? %>
-          <div class="mt-3 text-sm text-yellow-700 bg-yellow-50 px-3 py-2 rounded">
-            Non-machinable surcharge applies
-          </div>
+
+          <%= render Components::MoneyNotice.new(
+            lines: @letter.billing_lines,
+            profiles: current_user.billing_profiles,
+            field: "hcb_payment_account_id",
+            proceed: "Buy Indicia",
+            cancel_href: letter_path(@letter),
+          ) %>
         <% end %>
       </div>
-    </article>
+    </section>
+  </div>
 
-    <article>
-      <header><h2>Purchase Postage</h2></header>
-      <div class="p-4">
-        <%= form_with(url: buy_indicia_letter_path(@letter), method: :post, class: "space-y-4") do |form| %>
-          <div>
-            <label class="block text-sm text-gray-600 mb-1">USPS Payment Account</label>
-            <%= form.collection_select :usps_payment_account_id, 
-              USPS::PaymentAccount.all, 
-              :id, 
-              :name, 
-              { prompt: "Select account...", selected: USPS::PaymentAccount.first&.id },
-              { class: "w-full", required: true } %>
-          </div>
-
-          <% if current_user.hcb_payment_accounts.any? %>
-            <div>
-              <label class="block text-sm text-gray-600 mb-1">Pay with HCB Organization</label>
-              <%= form.collection_select :hcb_payment_account_id,
-                current_user.hcb_payment_accounts,
-                :id,
-                :organization_name,
-                { prompt: "Select organization..." },
-                { class: "w-full", required: true } %>
-            </div>
-          <% else %>
-            <div class="text-sm text-gray-600 bg-gray-50 p-3 rounded">
-              <%= link_to "Connect your HCB account", new_hcb_oauth_connection_path %> to pay for postage.
-            </div>
-          <% end %>
-
-          <div class="flex gap-3 pt-2">
-            <%= form.submit "Buy Indicia", class: "btn success", disabled: current_user.hcb_payment_accounts.empty? %>
-            <%= link_to "Cancel", @letter, class: "btn btn-small" %>
-          </div>
-        <% end %>
+  <div class="show-sidebar">
+    <section>
+      <strong>Info</strong>
+      <hr>
+      <div class="mt-half text-muted">
+        Purchasing indicia buys USPS postage for this letter. The estimate above is charged to the selected HCB organization before the purchase; if USPS sells us nothing, it is refunded.
       </div>
-    </article>
+    </section>
   </div>
 </div>

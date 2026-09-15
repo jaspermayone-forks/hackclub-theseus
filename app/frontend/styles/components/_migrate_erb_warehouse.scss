@@ -1,0 +1,89 @@
+// inline-style migration shard: erb_warehouse
+// area-specific classes only; shared utilities live in utils.scss
+
+// Info blurb under a "new" form (warehouse/orders/new, etc). First paragraph
+// keeps its bottom margin, last one is flush.
+.note-paragraphs p { margin: 0 0 0.5rem; }
+.note-paragraphs p:last-child { margin-bottom: 0; }
+
+// Block hint text under a field/checkbox (like .form-hint but 0.85em, no
+// color of its own — pair with .text-muted).
+.field-note { display: block; font-size: 0.85em; }
+.field-note--mt { margin-top: 0.25rem; }
+
+// Tighter <hr> spacing inside a detail sidebar section.
+.hr-tight { margin: 0.5rem 0; }
+
+// Row inside the order show "Batch" card: label + link on opposite ends.
+.batch-row-flex { display: flex; align-items: center; justify-content: space-between; }
+
+// Preformatted internal-notes block on order show.
+.notes-pre { margin: 0.5rem 0 0; white-space: pre-wrap; }
+
+// Cancel-order link that wraps a full-width button.
+
+// Centered "no actions available" state (shipped/canceled) in the order
+// sidebar. Pair with .text-muted for the canceled variant.
+.action-state { text-align: center; padding: 1rem 0; }
+.action-state--success { color: var(--green); }
+.action-state-icon { font-size: 2em; }
+
+// Error list in warehouse forms (looser than .error-box-list's styling).
+.form-error-list { margin: 0.25rem 0 0; padding-left: 1rem; }
+
+// "$" + input row for a cost field (SKU form).
+.cost-input-row { display: flex; align-items: center; gap: 0.25rem; }
+
+// Purchase order row in the index list. `.po-row` is also a JS query hook
+// for the status filter script, so the name has to stay.
+.po-row { padding: 0.5rem 0; }
+
+// Popover menu body (row of stacked links under a "..." toggle).
+.popover-menu { display: flex; flex-direction: column; }
+
+// Wider popover body that holds a small form (return-for-revision reason).
+.popover-body { padding: 0.75rem; min-width: 20rem; }
+
+// Small top/left margin nudge, repeated across warehouse detail views.
+
+// Warning-bordered callout card (PO show: blocked/returned SKU requests).
+.sku-requests-alert { border: 1px solid var(--yellow); padding: 0.75rem; }
+
+// One row in the blocking-SKU-requests list on PO show.
+.sku-request-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border-color, #333);
+}
+
+// Inline "assign SKU code" input next to the approve button.
+.sku-code-input { width: 8rem; padding: 0.15rem 0.35rem; font-size: 0.85em; }
+
+// One row in the order-templates index (own or public template list).
+.template-row { padding: 0.5rem 0; display: flex; align-items: center; gap: 0.5rem; }
+
+// Flush-margin variant of .form-error-list (USPS indicium form).
+.form-error-list--flush { margin: 0; padding-left: 1rem; }
+
+// Side-by-side form field row (USPS indicium form).
+.form-row-gap1 { display: flex; gap: 1rem; }
+
+// Right-aligned form action row (Cancel + submit).
+.form-actions-end { display: flex; align-items: center; gap: 0.5rem; justify-content: flex-end; }
+
+// One radio row in the "pick an HCB organization" list.
+.org-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--background2);
+}
+
+// Centered "connect to HCB" call-to-action card.
+.hcb-connect-card { text-align: center; padding: 2rem; max-width: 30rem; margin: 2rem auto; }
+
+// Standalone task-count badge iframe body (no default browser margin).
+.badge-frame-body { margin: 0 !important; }

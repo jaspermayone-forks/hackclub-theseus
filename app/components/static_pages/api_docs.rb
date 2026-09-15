@@ -1,0 +1,42 @@
+# frozen_string_literal: true
+
+class Components::StaticPages::APIDocs < Components::Base
+  def initialize(markdown:)
+    @markdown = markdown
+  end
+
+  def view_template
+    div(class: "api-docs-container") do
+      div(class: "markdown-body") do
+        raw safe rendered_html
+      end
+    end
+  end
+
+  private
+
+  def rendered_html
+    renderer = Redcarpet::Render::HTML.new(with_toc_data: true)
+    md = Redcarpet::Markdown.new(renderer, fenced_code_blocks: true, tables: true, autolink: true)
+                       .render(@markdown)
+    md
+      .gsub("%AI-COPY-BUTTON%", capture { ai_copy_button })
+      .gsub("%API-KEY-BUTTON%", capture { api_key_button })
+  end
+
+  def api_key_button
+    a(href: new_api_key_path, target: "_blank") do
+      button(class: "btn-sm") { "🔑 make one right now!" }
+    end
+  end
+
+  def ai_copy_button
+    button(
+      class: "api-docs-copy-btn",
+      onclick: safe("let b=this,s=b.querySelector('.copy-label');fetch('#{api_docs_path(format: :md)}').then(r=>r.text()).then(t=>navigator.clipboard.writeText(t)).then(()=>{s.textContent='Copied!';setTimeout(()=>s.textContent='Copy LLM-friendly version as Markdown',2000)})")
+    ) do
+      span { "⎘" }
+      span(class: "copy-label") { "Copy LLM-friendly version as Markdown" }
+    end
+  end
+end

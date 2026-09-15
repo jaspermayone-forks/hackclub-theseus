@@ -1,0 +1,43 @@
+# frozen_string_literal: true
+
+class Components::Admin::CommonTags::Form < Components::Base
+  include Phlex::Rails::Helpers::FormWith
+
+  def initialize(common_tag:)
+    @common_tag = common_tag
+  end
+
+  def view_template
+    if @common_tag.errors.any?
+      div(class: "banner banner-alert") do
+        plain @common_tag.errors.full_messages.to_sentence
+      end
+    end
+
+    form_with model: @common_tag, url: form_url, local: true do |f|
+      div(class: "form-stack") do
+        render Components::Shared::FormField.new(label: "Tag", name: "common_tag[tag]", value: @common_tag.tag, required: true)
+
+        div(class: "mb-1") do
+          label(class: "form-check-label") do
+            input(type: "hidden", name: "common_tag[implies_ysws]", value: "0")
+            input(type: "checkbox", name: "common_tag[implies_ysws]", value: "1", checked: @common_tag.implies_ysws)
+            plain "Implies YSWS"
+          end
+        end
+
+        div(class: "form-actions") do
+          button(type: "submit", class: "btn-success") do
+            plain(@common_tag.persisted? ? "Update Tag" : "Create Tag")
+          end
+        end
+      end
+    end
+  end
+
+  private
+
+  def form_url
+    @common_tag.persisted? ? admin_common_tag_path(@common_tag) : admin_common_tags_path
+  end
+end

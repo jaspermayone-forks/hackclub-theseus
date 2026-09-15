@@ -10,6 +10,8 @@
 #  idempotency_key     :string
 #  imb_rollover_count  :integer
 #  imb_serial_number   :integer
+#  indicia_error       :string
+#  indicia_state       :string
 #  mailed_at           :datetime
 #  mailing_date        :date
 #  metadata            :jsonb
@@ -68,6 +70,17 @@ class Letter < ApplicationRecord
   include CanBeBatched
   include AASM
   include Taggable
+  include PgSearch::Model
+
+  pg_search_scope :search,
+    against: %i[user_facing_title recipient_email],
+    associated_against: {
+      address: %i[first_name last_name],
+      user: %i[email]
+    },
+    using: {
+      tsearch: { prefix: true }
+    }
   # Add ActiveStorage attachment for the label PDF
   has_one_attached :label
   belongs_to :return_address, optional: true
@@ -91,7 +104,7 @@ class Letter < ApplicationRecord
     end
 
     event :mark_mailed do
-      transitions from: [:pending, :printed], to: :mailed
+      transitions from: [ :pending, :printed ], to: :mailed
     end
 
     event :mark_received do
@@ -108,6 +121,13 @@ class Letter < ApplicationRecord
   def return_address_name_line = return_address_name.presence || return_address&.name
 
   def been_mailed? = mailed? || received?
+
+  def origin_label
+    return "Manual" if manual?
+    return "Bulk upload" if bulk_upload?
+    return queue&.name || "Queue" if queue?
+    "API" if api?
+  end
 
   belongs_to :usps_mailer_id, class_name: "USPS::MailerId"
 
@@ -135,32 +155,23 @@ class Letter < ApplicationRecord
     )
   end
 
-  def flirt
-    desired_price = USPS::PricingEngine.fcmi_price(
-      processing_category,
-      weight,
-      address.country
-    )
-    USPS::FLIRTEngine.closest_us_price(desired_price)
-  rescue ArgumentError
-    nil
-  end
-
   def self.find_by_imb_sn(imb_sn, mailer_id = nil)
     query = where(imb_serial_number: imb_sn.to_i)
     query = query.where(usps_mailer_id: mailer_id) if mailer_id
     query.order(imb_rollover_count: :desc).first
   end
 
+  enum :created_via, { manual: 0, bulk_upload: 1, queue: 2, api: 3 }
+
   enum :processing_category, {
     letter: 0,
-    flat: 1,
+    flat: 1
   }, instance_methods: false, prefix: true, suffix: true
 
   enum :postage_type, {
     stamps: 0,
     indicia: 1,
-    international_origin: 2,
+    international_origin: 2
   }, instance_methods: false
 
   has_one :usps_indicium, class_name: "USPS::Indicium"
@@ -171,7 +182,8 @@ class Letter < ApplicationRecord
   validates :processing_category, presence: true
   validate :validate_postage_type_by_return_address
 
-  before_save :set_postage
+  before_validation :set_created_via_defaults, on: :create
+  before_save :set_postage, if: :should_reprice?
 
   def mailing_date_not_in_past
     if mailing_date < Date.current
@@ -222,7 +234,7 @@ class Letter < ApplicationRecord
         location: "#{e.scan_facility_city}, #{e.scan_facility_state} #{e.scan_facility_zip}",
         facility: "#{e.scan_facility_name} (#{e.scan_locale_key})",
         description: "[OP#{e.opcode.code}] #{e.opcode.process_description}",
-        extra_info: "#{e.handling_event_type_description} – #{e.mail_phase} – #{e.machine_name} (#{event.payload.dig("machineId") || "no ID"})",
+        extra_info: "#{e.handling_event_type_description} – #{e.mail_phase} – #{e.machine_name} (#{event.payload.dig("machineId") || "no ID"})"
       }
     end
     timestamps = []
@@ -232,75 +244,73 @@ class Letter < ApplicationRecord
       source: "Hack Club",
       facility: "Mailer",
       description: "Letter printed.",
-      location:,
+      location:
     } if printed_at
     timestamps << {
       happened_at: mailed_at.in_time_zone("America/New_York"),
       source: "Hack Club",
       facility: "Mailer",
       description: "Letter mailed!",
-      location:,
+      location:
     } if mailed_at
     timestamps << {
       happened_at: received_at.in_time_zone("America/New_York"),
       source: "You!",
       facility: "Your mailbox",
       description: "You received this letter!",
-      location: "wherever you live",
+      location: "wherever you live"
     } if received_at
     (iv + timestamps).sort_by { |event| event[:happened_at] }
   end
 
+  # The rate this letter would pay with the given postage type. A pure
+  # lookup: no record state, nothing saved. nil non_machinable means "as is".
+  def postage_for(postage_type:, non_machinable: nil)
+    non_machinable = self.non_machinable if non_machinable.nil?
+    case postage_type
+    when "indicia"
+      if address.us?
+        USPS::PricingEngine.metered_price(processing_category, weight, non_machinable)
+      else
+        USPS::PricingEngine.fcmi_price(processing_category, weight, address.country, non_machinable)
+      end
+    when "stamps"
+      if address.us?
+        USPS::PricingEngine.domestic_stamp_price(processing_category, weight, non_machinable)
+      else
+        USPS::PricingEngine.fcmi_price(processing_category, weight, address.country, non_machinable)
+      end
+    when "international_origin"
+      0
+    end
+  end
+
+  def billing_lines
+    [ Billing::Quote::Line.new(category: :indicia, label: "postage for #{public_id}", when: :now, amount_cents: (postage.to_d * 100).ceil, count: 1) ]
+  end
+
+  def undo_mailed!
+    raise AASM::InvalidTransition, "letter is not mailed or received" unless mailed? || received?
+    previous_state = printed_at.present? ? "printed" : "pending"
+    update!(aasm_state: previous_state, mailed_at: nil, received_at: nil)
+  end
+
   private
 
+  def should_reprice?
+    new_record? || postage_type_changed? || weight_changed? || non_machinable_changed?
+  end
+
+  # What this letter actually owes right now: the real indicium if one has
+  # been bought, nothing for stamps while it's still queued, else the rate.
   def set_postage
-    self.postage = case postage_type
-      when "indicia"
-        if usps_indicium.present?
-          # Use actual indicia price if indicia are bought
-          usps_indicium.cost
-        elsif address.us?
-          # For US mail without bought indicia, use metered price
-          USPS::PricingEngine.metered_price(
-            processing_category,
-            weight,
-            non_machinable
-          )
-        else
-          # For international mail without bought indicia, use FLIRT-ed price
-          flirted = flirt
-          if flirted
-            USPS::PricingEngine.metered_price(
-              flirted[:processing_category],
-              flirted[:weight],
-              flirted[:non_machinable]
-            )
-          else
-            USPS::PricingEngine.fcmi_price(processing_category, weight, address.country, non_machinable)
-          end
-        end
-      when "stamps"
-        if %i(queued).include?(aasm.current_state)
-          return 0
-        end
-        # For stamps, use stamp price for US and desired price for international
-        if address.us?
-          USPS::PricingEngine.domestic_stamp_price(
-            processing_category,
-            weight,
-            non_machinable
-          )
-        else
-          USPS::PricingEngine.fcmi_price(
-            processing_category,
-            weight,
-            address.country,
-            non_machinable
-          )
-        end
-      when "international_origin"
-        0
-      end
+    self.postage = if postage_type == "indicia" && usps_indicium.present?
+      usps_indicium.cost
+    elsif postage_type == "stamps" && queued?
+      0
+    else
+      postage_for(postage_type: postage_type)
+    end
   end
 
   def set_imb_sequence
@@ -309,5 +319,13 @@ class Letter < ApplicationRecord
       imb_serial_number: sn,
       imb_rollover_count: rollover,
     )
+  end
+
+  def set_created_via_defaults
+    if letter_queue_id.present?
+      self.created_via = queue.is_a?(Letter::InstantQueue) ? :api : :queue
+    elsif batch_id.present?
+      self.created_via = :bulk_upload
+    end
   end
 end

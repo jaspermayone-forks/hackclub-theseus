@@ -27,12 +27,20 @@
 #
 class Warehouse::SKU < ApplicationRecord
   has_paper_trail
+  include PgSearch::Model
+
+  pg_search_scope :search,
+    against: %i[name sku description],
+    using: {
+      tsearch: { prefix: true }
+    }
+
 
   scope :in_inventory, -> { where.not(in_stock: nil, inbound: nil) }
   scope :backordered, -> { where("in_stock < 0") }
 
   def declared_unit_cost
-    [declared_unit_cost_override, average_po_cost].find { |c| c&.positive? } || 0.0
+    [ declared_unit_cost_override, average_po_cost ].find { |c| c&.positive? } || 0.0
   end
 
   enum :category, {
@@ -46,7 +54,7 @@ class Warehouse::SKU < ApplicationRecord
     swag: 7,
     grant: 8,
     prize: 9,
-    unknown: 10,
+    unknown: 10
   }
 
   def self.guess_category(name, sku_code = nil)
@@ -100,27 +108,8 @@ class Warehouse::SKU < ApplicationRecord
                    declared_unit_cost: :declared_unit_cost,
                    actual_cost_to_hc: :actual_cost_to_hc,
                    in_stock: :in_stock,
-                   inbound: :inbound,
+                   inbound: :inbound
                  }
 
   has_zenventory_url "https://app.zenventory.com/admin/item-details/%s/basic", :zenventory_id
-
-  def sync_to_zenventory!
-    params = {
-      sku: sku,
-      description: name,
-      category: category&.to_s&.humanize,
-      active: enabled || false,
-      unitCost: declared_unit_cost,
-      userField1: country_of_origin,
-      userField2: hs_code,
-    }.compact
-
-    if zenventory_id.present?
-      Zenventory.update_item(zenventory_id, params)
-    else
-      response = Zenventory.create_item(params)
-      update!(zenventory_id: response[:id].to_s)
-    end
-  end
 end

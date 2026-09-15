@@ -2,23 +2,85 @@ class Letter::BatchesController < BaseBatchesController
   # GET /letter/batches
   def index
     authorize Letter::Batch, policy_class: Letter::BatchPolicy
-    @batches = policy_scope(Letter::Batch, policy_scope_class: Letter::BatchPolicy::Scope).order(created_at: :desc)
+    all_batches = policy_scope(Letter::Batch, policy_scope_class: Letter::BatchPolicy::Scope).order(created_at: :desc)
+    batches = all_batches
+    batches = batches.where(user_id: params[:user_id]) if params[:user_id].present? && current_user&.is_admin?
+    batches = batches.search(params[:search]) if params[:search].present?
+    users = current_user&.is_admin? ? User.where(id: all_batches.reorder(nil).select(:user_id).distinct).order(:email) : []
+    render Views::Letter::Batches::Index.new(
+      batches: batches,
+      search: params[:search],
+      state: params[:state],
+      user_id: params[:user_id],
+      users: users
+    )
   end
 
   # GET /letter/batches/new
   def new
     authorize Letter::Batch, policy_class: Letter::BatchPolicy
     @batch = Letter::Batch.new
+    render Views::Letter::Batches::New.new(batch: @batch)
   end
 
   # GET /letter/batches/:id
   def show
     authorize @batch, policy_class: Letter::BatchPolicy
+    if @batch.purchasing? || @batch.generating_labels?
+      redirect_to processing_letter_batch_path(@batch)
+      return
+    end
+    render Views::Letter::Batches::Show.new(batch: @batch)
   end
 
   # GET /letter/batches/:id/edit
   def edit
     authorize @batch, policy_class: Letter::BatchPolicy
+    render Views::Letter::Batches::Edit.new(batch: @batch)
+  end
+
+  # GET /letter/batches/:id/map
+  def map_fields
+    authorize @batch, policy_class: Letter::BatchPolicy
+    @csv_headers = @batch.csv_headers
+    @sample_row = @batch.csv_sample_row
+    render Views::Letter::Batches::Map.new(batch: @batch, csv_headers: @csv_headers, sample_row: @sample_row)
+  end
+
+  # GET /letter/batches/:id/processing
+  def processing
+    authorize @batch, :show?, policy_class: Letter::BatchPolicy
+    @cells = @batch.letters.includes(:address).order(:id).map do |letter|
+      state = case letter.indicia_state
+      when "purchased" then "purchased"
+      when "failed" then "failed"
+      else "pending"
+      end
+      icon = case state
+      when "purchased" then "✓"
+      when "failed" then "x"
+      else " "
+      end
+      { id: letter.id, state: state, title: letter.public_id, icon: icon }
+    end
+    # renders processing.html.erb
+  end
+
+  # POST /letter/batches/:id/set_mapping
+  def set_mapping
+    authorize @batch, policy_class: Letter::BatchPolicy
+    @batch.update!(field_mapping: params[:field_mapping].to_unsafe_h)
+    importer = LetterBatchImporter.new(@batch)
+    validation = importer.validate
+
+    if validation.any? { |r| r[:status] == :error }
+      render Views::Letter::Batches::Validate.new(batch: @batch, validation: validation)
+    else
+      count = importer.call
+      redirect_to process_confirm_letter_batch_path(@batch), notice: "Imported #{count} letters."
+    end
+  rescue => e
+    redirect_to map_fields_letter_batch_path(@batch), alert: "Mapping failed: #{e.message}"
   end
 
   # POST /letter/batches
@@ -26,116 +88,121 @@ class Letter::BatchesController < BaseBatchesController
     authorize Letter::Batch, policy_class: Letter::BatchPolicy
     @batch = Letter::Batch.new(batch_params.merge(user: current_user))
 
+    unless return_address_available?(@batch.letter_return_address_id)
+      @batch.errors.add(:letter_return_address, "isn't available to you")
+      render Views::Letter::Batches::New.new(batch: @batch), status: :unprocessable_entity
+      return
+    end
+
     if @batch.save
-      redirect_to map_fields_letter_batch_path(@batch), notice: "Batch was successfully created."
+      redirect_to map_fields_letter_batch_path(@batch)
     else
-      render :new, status: :unprocessable_entity
+      render Views::Letter::Batches::New.new(batch: @batch), status: :unprocessable_entity
     end
   end
 
   # PATCH /letter/batches/:id
   def update
     authorize @batch, policy_class: Letter::BatchPolicy
+
+    unless return_address_available?(batch_params[:letter_return_address_id])
+      redirect_to edit_letter_batch_path(@batch), alert: "That return address isn't available to you."
+      return
+    end
+
     if @batch.update(batch_params)
       validate_postage_types
       if @batch.errors.any?
-        render :edit, status: :unprocessable_entity
+        render Views::Letter::Batches::Edit.new(batch: @batch), status: :unprocessable_entity
         return
       end
 
-      # Update associated letters if the batch hasn't been processed
-      if @batch.may_mark_processed?
-        @batch.letters.update_all(
-          height: @batch.letter_height,
-          width: @batch.letter_width,
-          weight: @batch.letter_weight,
-          processing_category: @batch.letter_processing_category,
-          mailing_date: @batch.letter_mailing_date,
-          usps_mailer_id_id: @batch.letter_mailer_id_id,
-          return_address_id: @batch.letter_return_address_id,
-          return_address_name: @batch.letter_return_address_name,
-        )
-      end
-
-      # Always update tags and user facing title on letters
-      @batch.letters.update_all(
-        tags: @batch.tags,
-        user_facing_title: @batch.user_facing_title,
-      )
-
+      @batch.propagate_to_letters!
       redirect_to letter_batch_path(@batch), notice: "Batch was successfully updated."
     else
-      render :edit, status: :unprocessable_entity
+      render Views::Letter::Batches::Edit.new(batch: @batch), status: :unprocessable_entity
     end
   end
 
   # DELETE /letter/batches/:id
   def destroy
     authorize @batch, policy_class: Letter::BatchPolicy
-    @batch.destroy
-    redirect_to letter_batches_path, notice: "Batch was successfully destroyed."
+
+    if @batch.destroy
+      redirect_to letter_batches_path, status: :see_other, notice: "Batch was successfully destroyed."
+    else
+      redirect_to letter_batch_path(@batch), status: :see_other, alert: @batch.errors.full_messages.to_sentence.presence || "Batch could not be destroyed."
+    end
   end
 
   def process_form
     authorize @batch, :process_form?, policy_class: Letter::BatchPolicy
-    render :process_letter
+    render Views::Letter::Batches::Process.new(batch: @batch)
   end
 
   def process_batch
     authorize @batch, :process_batch?, policy_class: Letter::BatchPolicy
-    @batch = Batch.find(params[:id])
 
-    if request.post?
-      if letter_batch_params[:letter_mailing_date].blank?
-        redirect_to process_letter_batch_path(@batch), alert: "Mailing date is required"
+    if letter_batch_params[:letter_mailing_date].blank?
+      redirect_to process_confirm_letter_batch_path(@batch), alert: "Mailing date is required"
+      return
+    end
+
+    # Validate payment accounts if indicia selected
+    if letter_batch_params[:us_postage_type] == "indicia" || letter_batch_params[:intl_postage_type] == "indicia"
+      authorize @batch, :process_batch_with_indicia?, policy_class: Letter::BatchPolicy
+
+      unless USPS::PaymentAccount.exists?(id: letter_batch_params[:usps_payment_account_id])
+        redirect_to process_confirm_letter_batch_path(@batch), alert: "Please select a valid USPS payment account"
         return
       end
 
-      @batch.letter_mailing_date = letter_batch_params[:letter_mailing_date]
-      @batch.save! # Save the mailing date before processing
-
-      non_machinable = ActiveModel::Type::Boolean.new.cast(letter_batch_params[:non_machinable])
-      @batch.letters.update_all(non_machinable: non_machinable)
-
-      # Only require payment account if indicia is selected
-      if letter_batch_params[:us_postage_type] == "indicia" || letter_batch_params[:intl_postage_type] == "indicia"
-        authorize @batch, :process_batch_with_indicia?, policy_class: Letter::BatchPolicy
-
-        payment_account = USPS::PaymentAccount.find_by(id: letter_batch_params[:usps_payment_account_id])
-
-        if payment_account.nil?
-          redirect_to process_letter_batch_path(@batch), alert: "Please select a valid payment account when using indicia"
-          return
-        end
-
-        hcb_payment_account = current_user.hcb_payment_accounts.find_by(id: letter_batch_params[:hcb_payment_account_id])
-
-        if hcb_payment_account.nil?
-          redirect_to process_letter_batch_path(@batch), alert: "Please select an HCB payment account to purchase indicia"
-          return
-        end
-      else
-        hcb_payment_account = nil
+      unless current_user.billing_profiles.exists?(id: letter_batch_params[:hcb_payment_account_id])
+        redirect_to process_confirm_letter_batch_path(@batch), alert: "Please select a billing profile"
+        return
       end
 
-      begin
-        @batch.process!(
-          payment_account: payment_account,
-          hcb_payment_account: hcb_payment_account,
-          us_postage_type: letter_batch_params[:us_postage_type],
-          intl_postage_type: letter_batch_params[:intl_postage_type],
-          template_cycle: letter_batch_params[:template_cycle].to_s.split(",").compact_blank,
-          user_facing_title: letter_batch_params[:user_facing_title],
-          include_qr_code: letter_batch_params[:include_qr_code],
-        )
-        @batch.mark_processed! if @batch.may_mark_processed?
-
-        redirect_to letter_batch_path(@batch, print_now: letter_batch_params[:print_immediately]), notice: "Batch processed successfully"
-      rescue => e
-        event_id = Sentry.capture_exception(e)&.event_id
-        redirect_to process_letter_batch_path(@batch), alert: "Failed to process batch: #{e.message} (error: #{event_id})"
+      # Don't let anyone start a job that we know will refuse to charge.
+      if @batch.unbackfilled_legacy_charge?
+        redirect_to process_confirm_letter_batch_path(@batch), alert: Letter::Batch::LEGACY_CHARGE_NOT_BACKFILLED
+        return
       end
     end
+
+    # Save options and mailing date, then enqueue
+    @batch.update!(
+      letter_mailing_date: letter_batch_params[:letter_mailing_date],
+      process_options: {
+        us_postage_type: letter_batch_params[:us_postage_type],
+        intl_postage_type: letter_batch_params[:intl_postage_type],
+        usps_payment_account_id: letter_batch_params[:usps_payment_account_id],
+        hcb_payment_account_id: letter_batch_params[:hcb_payment_account_id],
+        non_machinable: letter_batch_params[:non_machinable],
+        template_cycle: template_cycle_from(letter_batch_params[:template_cycle]),
+        user_facing_title: letter_batch_params[:user_facing_title],
+        include_qr_code: letter_batch_params[:include_qr_code]
+      }
+    )
+
+    BatchProcessJob.perform_later(@batch.id)
+    redirect_to processing_letter_batch_path(@batch)
+  end
+
+  # GET /letter/batches/:id/billing_consent — turbo frame, re-loaded when postage options change
+  def billing_consent
+    authorize @batch, :process_form?, policy_class: Letter::BatchPolicy
+    component = Components::MoneyNotice.new(
+      lines: @batch.billing_lines(
+        us_postage_type: params[:us_postage_type].presence,
+        intl_postage_type: params[:intl_postage_type].presence,
+        non_machinable: ActiveModel::Type::Boolean.new.cast(params[:non_machinable]),
+      ),
+      profiles: current_user.billing_profiles,
+      field: "batch[hcb_payment_account_id]",
+      selected: current_user.billing_profiles.find_by(id: params[:hcb_payment_account_id]),
+      proceed: "Start Processing",
+    )
+    render html: helpers.turbo_frame_tag("billing-consent-frame") { render_to_string(component) }, layout: false
   end
 
   def mark_printed
@@ -154,15 +221,96 @@ class Letter::BatchesController < BaseBatchesController
 
   def mark_mailed
     authorize @batch, :mark_mailed?, policy_class: Letter::BatchPolicy
-    if @batch.processed?
-      @batch.letters.each do |letter|
-        letter.mark_mailed! if letter.may_mark_mailed?
-      end
-      User::UpdateTasksJob.perform_later(current_user)
-      redirect_to letter_batch_path(@batch), notice: "All letters have been marked as mailed."
-    else
-      redirect_to letter_batch_path(@batch), alert: "Cannot mark letters as mailed. Batch must be processed."
+    unless @batch.processed?
+      redirect_to letter_batch_path(@batch), status: :see_other, alert: "Cannot mark letters as mailed. Batch must be processed."
+      return
     end
+
+    ids = selected_letter_ids
+    letters = ids.any? ? @batch.letters.where(id: ids) : @batch.letters
+    count = 0
+
+    letters.find_each do |letter|
+      if letter.may_mark_mailed?
+        letter.mark_mailed!
+        count += 1
+      end
+    end
+
+    User::UpdateTasksJob.perform_later(current_user)
+    redirect_to letter_batch_path(@batch), notice: "Marked #{count} letters as mailed."
+  end
+
+  def print_subset
+    authorize @batch, :show?, policy_class: Letter::BatchPolicy
+    result = Letter::PrintLabels.new(batch: @batch, letter_ids: selected_letter_ids, count: params[:count] || 100).call
+    session[:last_print_letter_ids] = result[:letter_ids]
+    send_data result[:pdf_data],
+      filename: "batch_#{@batch.public_id}_#{result[:count]}letters.pdf",
+      type: "application/pdf",
+      disposition: params[:download] ? "attachment" : "inline"
+  rescue ArgumentError => e
+    redirect_to letter_batch_path(@batch), status: :see_other, alert: e.message
+  end
+
+  def confirm_printed
+    authorize @batch, :mark_printed?, policy_class: Letter::BatchPolicy
+
+    letter_ids = selected_letter_ids.presence || session.delete(:last_print_letter_ids) || []
+    letters = @batch.letters.where(id: letter_ids)
+    count = 0
+
+    letters.find_each do |letter|
+      if letter.may_mark_printed?
+        letter.mark_printed!
+        count += 1
+      end
+    end
+
+    @batch.audit!(:confirmed_printed, count: count)
+    redirect_to letter_batch_path(@batch), notice: "Marked #{count} letters as printed."
+  end
+
+  def retry_failed
+    authorize @batch, :process_batch?, policy_class: Letter::BatchPolicy
+    Letter::RetryBatch.new(batch: @batch).call
+    redirect_to processing_letter_batch_path(@batch)
+  rescue RuntimeError => e
+    redirect_to processing_letter_batch_path(@batch), alert: e.message
+  end
+
+  def refund_overpayment
+    authorize @batch, :refund_overpayment?, policy_class: Letter::BatchPolicy
+
+    # Phase 1: compute and reserve under the batch lock. The credit entry is
+    # created here (pending), so a second click sees a smaller net and bails.
+    transfer = nil
+    @batch.with_lock do
+      charge = @batch.refundable_charge
+      overpaid = @batch.prepaid_cents
+      if charge.nil? || overpaid <= 0
+        redirect_to processing_letter_batch_path(@batch), alert: "Nothing to refund."
+        return
+      end
+
+      transfer = Billing.credit!(
+        reverses: charge,
+        amount_cents: [ overpaid, charge.net_cents ].min,
+        name: "Refund for #{@batch.public_id}",
+        note: "overpayment refund by #{current_user.email}",
+        execute: false,
+      )
+    end
+
+    # Phase 2: HCB call outside the lock
+    Billing.execute!(transfer, strict: true)
+    redirect_to processing_letter_batch_path(@batch), notice: "Refunded #{Billing::Memo.money(transfer.amount_cents)}"
+  rescue Billing::InFlight => e
+    redirect_to processing_letter_batch_path(@batch), alert: "#{e.message}. Try again once it resolves."
+  rescue Billing::Unconfirmed => e
+    redirect_to processing_letter_batch_path(@batch), alert: "Refund sent but unconfirmed (#{e.transfer.idempotency_key}); the reconciler will resolve it. Do not retry."
+  rescue Billing::Rejected => e
+    redirect_to processing_letter_batch_path(@batch), alert: "Refund failed: #{e.message}"
   end
 
   def update_costs
@@ -183,10 +331,10 @@ class Letter::BatchesController < BaseBatchesController
       total_cost: @batch.postage_cost(non_machinable: non_machinable),
       cost_difference: {
         us: cost_differences[:us],
-        intl: cost_differences[:intl],
+        intl: cost_differences[:intl]
       },
       us_count: us_letters.count,
-      intl_count: intl_letters.count,
+      intl_count: intl_letters.count
     }
   end
 
@@ -197,18 +345,42 @@ class Letter::BatchesController < BaseBatchesController
 
   def regenerate_labels
     authorize @batch, :process_batch?, policy_class: Letter::BatchPolicy
+    opts = params.fetch(:batch, {}).permit(:template_cycle, :include_qr_code, template_cycle: [])
     @batch.regenerate_labels!(
-      template_cycle: letter_batch_params[:template_cycle].to_s.split(",").compact_blank,
-      include_qr_code: letter_batch_params[:include_qr_code],
+      template_cycle: template_cycle_from(opts[:template_cycle]),
+      include_qr_code: opts[:include_qr_code],
     )
     redirect_to letter_batch_path(@batch), notice: "Labels regenerated successfully"
   end
 
+  def import_with_skip
+    authorize @batch, :update?, policy_class: Letter::BatchPolicy
+    count = LetterBatchImporter.new(@batch).call(skip_invalid: true)
+    redirect_to process_confirm_letter_batch_path(@batch), notice: "Imported #{count} letters (skipped invalid rows)."
+  end
+
   private
+
+  def batch_scope = policy_scope(Letter::Batch, policy_scope_class: Letter::BatchPolicy::Scope)
+
+  # The picker only ever offers these, so anything else is someone else's
+  # private sender.
+  def return_address_available?(id)
+    return true if id.blank?
+    return true if current_user&.is_admin?
+    ReturnAddress.shared.or(ReturnAddress.owned_by(current_user)).exists?(id: id)
+  end
+
+  # The picklist ships one hidden field holding "12,13,14"; a plain form can
+  # also send letter_ids[]. Accept either.
+  def selected_letter_ids
+    Array(params[:letter_ids]).flat_map { |v| v.to_s.split(",") }.compact_blank
+  end
 
   def batch_params
     permitted = params.require(:letter_batch).permit(
       :csv,
+      :addresses_data,
       :letter_template_id,
       :user_facing_title,
       :letter_height,
@@ -245,8 +417,16 @@ class Letter::BatchesController < BaseBatchesController
       :template_cycle,
       :non_machinable,
       tags: [],
+      template_cycle: [],
     )
     normalize_processing_category(permitted)
+  end
+
+  # The process form posts template_cycle[]; the regenerate form posts a
+  # comma-joined string built by the JS picker.
+  def template_cycle_from(value)
+    Array(value).flat_map { |v| v.to_s.split(",") }.compact_blank.presence ||
+      [ SnailMail::PhlexService.templates_for_size(:standard).first ].compact
   end
 
   def normalize_processing_category(permitted)
@@ -256,18 +436,12 @@ class Letter::BatchesController < BaseBatchesController
     permitted
   end
 
+
   def validate_postage_types
     return unless @batch.letter_return_address&.us?
-
     us_postage_type = batch_params[:us_postage_type]
     intl_postage_type = batch_params[:intl_postage_type]
-
-    if us_postage_type.present? && !%w[stamps indicia].include?(us_postage_type)
-      @batch.errors.add(:us_postage_type, "must be either 'stamps' or 'indicia'")
-    end
-
-    if intl_postage_type.present? && !%w[stamps indicia].include?(intl_postage_type)
-      @batch.errors.add(:intl_postage_type, "must be either 'stamps' or 'indicia'")
-    end
+    @batch.errors.add(:us_postage_type, "must be either 'stamps' or 'indicia'") if us_postage_type.present? && !%w[stamps indicia].include?(us_postage_type)
+    @batch.errors.add(:intl_postage_type, "must be either 'stamps' or 'indicia'") if intl_postage_type.present? && !%w[stamps indicia].include?(intl_postage_type)
   end
 end

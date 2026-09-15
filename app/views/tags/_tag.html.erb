@@ -1,5 +1,1 @@
-<span class="tag">
-  <%= link_to tag_stats_path(tag) do %>
-    <%= tag %>
-  <% end %>
-</span>
+<a href="<%= tag_stats_path(tag) %>"><span class="badge"><%= tag %></span></a>

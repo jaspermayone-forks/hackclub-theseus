@@ -2,35 +2,51 @@
 
 class Warehouse::PurchaseOrderPolicy < ApplicationPolicy
   def index?
-    user_is_admin
+    user_can_warehouse
   end
 
   def show?
-    user_is_admin
+    user_can_warehouse
   end
 
   def new?
-    user_is_admin
+    user_can_warehouse
   end
 
   def create?
-    user_is_admin
+    user_can_warehouse
   end
 
   def edit?
-    user_is_admin
+    (record_belongs_to_user || user_is_admin) && (record.draft? || record.returned?)
   end
 
   def update?
-    user_is_admin
+    edit?
   end
 
   def destroy?
-    user_is_admin && record.draft?
+    (record_belongs_to_user || user_is_admin) && (record.draft? || record.returned?)
+  end
+
+  def submit?
+    record_belongs_to_user && record.draft?
+  end
+
+  def revise?
+    (record_belongs_to_user || user_is_admin) && record.returned?
+  end
+
+  def approve?
+    user.warehouse_czar? && record.submitted?
+  end
+
+  def return_for_revision?
+    user.warehouse_czar? && record.submitted?
   end
 
   def send_to_zenventory?
-    user_is_admin && record.draft?
+    user.warehouse_czar? && record.approved? && record.all_skus_resolved?
   end
 
   def sync?
@@ -39,8 +55,10 @@ class Warehouse::PurchaseOrderPolicy < ApplicationPolicy
 
   class Scope < ApplicationPolicy::Scope
     def resolve
-      if user&.admin?
+      if user&.warehouse_czar? || user&.admin?
         scope.all
+      elsif user&.can_warehouse
+        scope.where(user: user)
       else
         scope.none
       end

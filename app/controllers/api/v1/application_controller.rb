@@ -13,6 +13,28 @@ module API
       include ActionController::HttpAuthentication::Token::ControllerMethods
       include PaperTrail::Rails::Controller
 
+      # Declared first so everything below wins: Rescuable matches the most
+      # recently declared handler.
+      rescue_from StandardError do |e|
+        Sentry.capture_exception(e)
+        Rails.logger.error("[api] unhandled #{e.class}: #{e.message}")
+        render json: { error: "internal_error" }, status: :internal_server_error
+      end
+
+      rescue_from AASM::InvalidTransition do |e|
+        render json: {
+          error: "invalid_transition",
+          event: e.event_name,
+          state: e.originating_state,
+          message: e.message
+        }, status: :unprocessable_entity
+      end
+
+      rescue_from Warehouse::Order::MissingCostsError, Zenventory::ZenventoryError do |e|
+        Sentry.capture_exception(e)
+        render json: { error: "dispatch_failed", message: e.message }, status: :unprocessable_entity
+      end
+
       rescue_from Pundit::NotAuthorizedError do |e|
         render json: { error: "not_authorized" }, status: :forbidden
       end
@@ -26,11 +48,11 @@ module API
       end
 
       rescue_from ActiveRecord::RecordNotUnique do |e|
-        render json: { error: "idempotency_error", messages: ["a record by that idempotency key already exists!"] }, status: :bad_request
+        render json: { error: "idempotency_error", messages: [ "a record by that idempotency key already exists!" ] }, status: :bad_request
       end
 
       rescue_from ActionController::ParameterMissing do |e|
-        render json: { error: "missing_parameter", messages: [e.message] }, status: :bad_request
+        render json: { error: "missing_parameter", messages: [ e.message ] }, status: :bad_request
       end
 
       private
@@ -49,6 +71,10 @@ module API
 
       def set_pii = @pii = current_token&.pii?
 
+      # An impersonated request acts as someone else entirely, so none of the
+      # key owner's own defaults may follow it over.
+      def impersonating? = current_token.present? && current_user.present? && current_user != current_token.user
+
       def require_not_qz_only!
         if current_token&.qz_only?
           render json: { error: "qz_only_key" }, status: :forbidden
@@ -66,9 +92,9 @@ module API
             rescue ActiveRecord::RecordNotFound
               render json: { error: "impersonate_error", message: "couldn't find that user" }, status: :bad_request
             end
-          else
+        else
             current_token&.user
-          end
+        end
       end
 
       attr_reader :current_token

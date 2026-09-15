@@ -2,17 +2,17 @@ class Warehouse::SKUPolicy < ApplicationPolicy
   def index?
     user_can_warehouse
   end
-  
+
   def show?
     user_can_warehouse
   end
 
   def create?
-    user_is_admin
+    false
   end
-  
+
   def new?
-    user_is_admin
+    false
   end
 
   def update?

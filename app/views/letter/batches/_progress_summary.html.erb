@@ -1,0 +1,18 @@
+<div id="batch-summary">
+  <div class="mb-half progress-summary-row">
+    <div>
+      <strong class="progress-count"><%= purchased %></strong>
+      <span class="text-muted"> / <%= total %> purchased</span>
+    </div>
+    <% if failed > 0 %>
+      <div class="text-danger"><strong class="progress-count-sm"><%= failed %></strong> failed</div>
+    <% end %>
+    <% if (remaining = total - purchased - failed) > 0 %>
+      <div class="text-muted"><%= remaining %> remaining</div>
+    <% end %>
+  </div>
+  <div class="batch-progress-bar batch-progress-bar--spaced">
+    <% pct = total > 0 ? ((purchased + failed) * 100.0 / total).round(1) : 0 %>
+    <div class="batch-progress-fill" style="width:<%= pct %>%;"></div>
+  </div>
+</div>

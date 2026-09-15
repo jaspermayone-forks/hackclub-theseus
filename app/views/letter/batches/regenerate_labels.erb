@@ -1,16 +1,53 @@
-<h1>regenerate labels</h1>
-<%= form_with(model: @batch, url: regenerate_labels_letter_batch_path(@batch), method: :post) do |f| %>
-  <div class="form-group">
-    <%= f.label :template_cycle, "templates to use:", class: "form-label" %>
-    <%= f.hidden_field :template_cycle, id: "selected_template", value: params[:template] %>
-    <%= render "shared/template_picker", multiple: true %>
+<div class="toolbar mb-0 no-border-bottom">
+  <div class="flex-row">
+    <a href="<%= letter_batch_path(@batch) %>" class="text-muted no-underline">← Batch #<%= @batch.id %></a>
+    <strong class="text-title">Regenerate Labels</strong>
   </div>
-  <div class="form-group">
-    <%= f.label :include_qr_code, "Include QR Code", class: "form-label" %>
-    <%= f.check_box :include_qr_code, class: "form-checkbox", checked: true %>
+</div>
+
+<div class="show-layout">
+  <div class="show-main">
+    <%= form_with(model: @batch, url: regenerate_labels_letter_batch_path(@batch), method: :post) do |f| %>
+      <section class="mb-1">
+        <strong>Template Selection</strong>
+        <hr>
+        <div class="mt-half">
+          <div class="form-field-lg">
+            <%= f.label :template_cycle, "Templates to use:", class: "date-field-label" %>
+            <%= f.hidden_field :template_cycle, id: "selected_template", value: params[:template] %>
+            <%= render "shared/template_picker", multiple: true %>
+          </div>
+        </div>
+      </section>
+
+      <section class="mb-1">
+        <strong>Options</strong>
+        <hr>
+        <div class="mt-half">
+          <label class="form-check-label">
+            <%= f.check_box :include_qr_code, checked: true %>
+            <span>Include QR Code</span>
+          </label>
+        </div>
+      </section>
+
+      <div class="mt-1 flex-gap-half">
+        <button type="submit" class="btn-success">⟳ Regenerate Labels</button>
+        <a href="<%= letter_batch_path(@batch) %>" class="cancel-link">Cancel</a>
+      </div>
+    <% end %>
   </div>
-  <div class="actions">
-    <%= f.submit "Regenerate Labels", class: "contrast" %>
-    <%= link_to "nevermind", letter_batch_path(@batch)%>
+
+  <div class="show-sidebar">
+    <section>
+      <strong>Batch Info</strong>
+      <hr>
+      <div class="detail-grid mt-half">
+        <span class="detail-label">Letters</span>
+        <span><%= @batch.letters.count %></span>
+        <span class="detail-label">Addresses</span>
+        <span><%= @batch.addresses.count %></span>
+      </div>
+    </section>
   </div>
-<% end %>
+</div>

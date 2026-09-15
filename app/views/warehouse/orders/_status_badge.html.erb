@@ -1,25 +1,9 @@
-<!--state :draft, initial: true-->
-<!--state :dispatched-->
-<!--state :mailed-->
-<!--state :errored-->
-<!--state :canceled-->
-<%
-  color, text = case order.aasm.current_state
-  when :draft
-    %w[bg-muted draft]
-  when :dispatched
-    ["info", "sent to warehouse"]
-  when :mailed
-    %w[success mailed!]
-  when :errored
-    %w[error errored?]
-  when :canceled
-    %w[warning canceled]
-  else
-    ["purple", "this shouldn't happen?!"]
-  end
-%>
-
-<span class="badge <%= color %> float-right">
-  <%= text %>
-</span>
+<% badge_class = case order.aasm.current_state
+  when :draft then "badge"
+  when :dispatched then "badge badge-info"
+  when :mailed then "badge badge-success"
+  when :errored then "badge badge-danger"
+  when :canceled then "badge badge-warning"
+  else "badge"
+  end %>
+<span class="<%= badge_class %>"><%= order.humanized_state %></span>

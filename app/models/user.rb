@@ -9,6 +9,8 @@
 #  email                  :string
 #  icon_url               :string
 #  is_admin               :boolean
+#  is_warehouse_czar      :boolean          default(FALSE), not null
+#  settings               :jsonb            not null
 #  username               :string
 #  created_at             :datetime         not null
 #  updated_at             :datetime         not null
@@ -30,14 +32,23 @@
 #
 class User < ApplicationRecord
   has_paper_trail
+  include PgSearch::Model
+
+  pg_search_scope :search,
+    against: %i[username email],
+    using: {
+      tsearch: { prefix: true }
+    }
+
 
   has_many :warehouse_templates, class_name: "Warehouse::Template", inverse_of: :user
   has_many :return_addresses, dependent: :destroy
   has_many :letters
   has_many :batches
+  has_many :warehouse_orders, class_name: "Warehouse::Order"
   has_many :letter_queues, dependent: :destroy, class_name: "Letter::Queue"
   has_one :hcb_oauth_connection, class_name: "HCB::OauthConnection", dependent: :destroy
-  has_many :hcb_payment_accounts, class_name: "HCB::PaymentAccount", dependent: :destroy
+  has_many :billing_profiles, class_name: "BillingProfile", dependent: :destroy
   belongs_to :home_mid, class_name: "USPS::MailerId", optional: true
   belongs_to :home_return_address, class_name: "ReturnAddress", optional: true
 
@@ -46,16 +57,13 @@ class User < ApplicationRecord
   set_public_id_prefix "usr"
 
   def admin? = is_admin
-
+  def warehouse_czar? = is_warehouse_czar
   def can_use_indicia? = can_use_indicia
 
   def hcb_connected? = hcb_oauth_connection.present? && !hcb_oauth_connection.invalidated?
 
   def hcb_connection_invalidated? = hcb_oauth_connection&.invalidated? || false
 
-  def make_admin! = update!(is_admin: true)
-
-  def remove_admin! = update!(is_admin: false)
 
   def self.from_hack_club_auth(auth_hash)
     hca_id = auth_hash.dig("uid")
@@ -83,5 +91,12 @@ class User < ApplicationRecord
 
     user.save!
     user
+  end
+  def setting(key)
+    settings&.dig(key.to_s)
+  end
+
+  def update_setting(key, value)
+    update!(settings: (settings || {}).merge(key.to_s => value))
   end
 end

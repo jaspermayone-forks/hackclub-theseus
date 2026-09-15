@@ -1,0 +1,169 @@
+# frozen_string_literal: true
+
+class Views::Warehouse::Batches::Show < Views::Base
+  include Phlex::Rails::Helpers::NumberToCurrency
+
+  def initialize(batch:)
+    @batch = batch
+  end
+
+  def view_template
+    div(class: "toolbar toolbar--flush") do
+      div(class: "flex-row") do
+        a(href: warehouse_batches_path, class: "link-muted") { "← Batches" }
+        strong(class: "text-title") { "Warehouse Batch ##{@batch.id}" }
+        render Components::Shared::StatusBadge.new(status: @batch.aasm.current_state, type: :batch)
+      end
+      div(class: "flex-row") do
+        span(class: "text-muted") { "#{helpers.pluralize(@batch.addresses.count, 'address')}" }
+        if @batch.tags.any?
+          render Components::Shared::Tags.new(tags: @batch.tags)
+        end
+      end
+      span(class: "spacer")
+      div(class: "flex-row") do
+        a(href: edit_warehouse_batch_path(@batch)) { "✎ Edit" }
+        if @batch.fields_mapped?
+          a(href: process_confirm_warehouse_batch_path(@batch)) do
+            button(class: "btn-success btn-sm") { "▶ Process" }
+          end
+        elsif @batch.awaiting_field_mapping?
+          a(href: map_fields_warehouse_batch_path(@batch)) do
+            button(class: "btn-success btn-sm") { "⇉ Map Fields" }
+          end
+        end
+        form(method: :post, action: warehouse_batch_path(@batch)) do
+          input(type: :hidden, name: :_method, value: :delete)
+          input(type: :hidden, name: :authenticity_token, value: helpers.form_authenticity_token)
+          button(type: "submit", class: "btn-danger btn-sm", data: { turbo_confirm: "Delete this batch?" }) { "✕" }
+        end
+      end
+    end
+
+    div(class: "show-layout") do
+      div(class: "show-main") do
+        batch_details
+        orders_section if @batch.orders.any?
+        addresses_section if @batch.addresses.any?
+      end
+
+      div(class: "show-sidebar") do
+        actions_box
+        cost_summary_box if @batch.processed?
+      end
+    end
+  end
+
+  private
+
+  def batch_details
+    section(class: "mb-1") do
+      strong { "Details" }
+      hr
+      div(class: "detail-grid mt-half") do
+        span(class: "detail-label") { "Template" }
+        span { @batch.warehouse_template&.name || "—" }
+        span(class: "detail-label") { "Title" }
+        span { @batch.warehouse_user_facing_title || "—" }
+        span(class: "detail-label") { "Created" }
+        span { @batch.created_at.strftime("%b %d, %Y %H:%M") }
+        span(class: "detail-label") { "Addresses" }
+        span { @batch.addresses.count.to_s }
+        span(class: "detail-label") { "Orders" }
+        span { @batch.orders.count.to_s }
+      end
+    end
+  end
+
+  def orders_section
+    section(class: "mb-1") do
+      strong { "Orders (#{@batch.orders.count})" }
+      hr
+      table(class: "mt-half w-100") do
+        thead do
+          tr do
+            th(class: "text-left") { "ID" }
+            th(class: "text-left") { "Recipient" }
+            th(class: "text-left") { "Status" }
+          end
+        end
+        tbody do
+          @batch.orders.includes(:address).limit(100).each do |order|
+            tr do
+              td { a(href: warehouse_order_path(order)) { order.public_id } }
+              td { plain "#{order.address&.first_name} #{order.address&.last_name}" }
+              td { render Components::Shared::StatusBadge.new(status: order.aasm_state, type: :warehouse_order) }
+            end
+          end
+        end
+      end
+    end
+  end
+
+  def addresses_section
+    section(class: "mb-1") do
+      strong { "Addresses (#{@batch.addresses.count})" }
+      hr
+      table(class: "mt-half w-100") do
+        thead do
+          tr do
+            th(class: "text-left") { "Name" }
+            th(class: "text-left") { "City" }
+            th(class: "text-left") { "State" }
+            th(class: "text-left") { "Country" }
+          end
+        end
+        tbody do
+          @batch.addresses.limit(100).each do |addr|
+            tr do
+              td { "#{addr.first_name} #{addr.last_name}" }
+              td { addr.city || "—" }
+              td { addr.state || "—" }
+              td { addr.country || "—" }
+            end
+          end
+        end
+      end
+    end
+  end
+
+  def actions_box
+    section(class: "mb-1") do
+      strong { "Actions" }
+      hr
+      div(class: "mt-half") do
+        if @batch.fields_mapped?
+          a(href: process_confirm_warehouse_batch_path(@batch)) do
+            button(class: "btn-success w-100") { "▶ Process Batch" }
+          end
+        elsif @batch.processed?
+          div(class: "batch-processed-icon-box") do
+            span(class: "batch-processed-check") { "✓" }
+            div(class: "mt-half") { strong { "Processed" } }
+          end
+        elsif @batch.awaiting_field_mapping?
+          a(href: map_fields_warehouse_batch_path(@batch)) do
+            button(class: "btn-success w-100") { "⇉ Map Fields" }
+          end
+        else
+          span(class: "text-muted") { "Map fields before processing" }
+        end
+      end
+    end
+  end
+
+  def cost_summary_box
+    section do
+      strong { "Cost Summary" }
+      hr
+      div(class: "detail-grid mt-half") do
+        span(class: "detail-label") { "Contents" }
+        span { number_to_currency(@batch.contents_cost) }
+        span(class: "detail-label") { "Labor" }
+        span { number_to_currency(@batch.labor_cost) }
+        span(class: "detail-label") { "Total" }
+        strong { number_to_currency(@batch.total_cost) }
+      end
+    end
+  end
+end

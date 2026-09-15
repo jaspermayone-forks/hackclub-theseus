@@ -1,70 +1,65 @@
-<% content_for :title, "HCB Payment Accounts" %>
+<% content_for :title, "Billing Profiles" %>
 
-<div class="container">
-  <header class="page-header mb-6">
-    <h1>HCB Payment Accounts</h1>
-  </header>
-
+<div class="toolbar">
+  <div class="flex-row">
+    <strong class="text-title">Billing Profiles</strong>
+  </div>
+  <span class="spacer"></span>
   <% if current_user.hcb_connected? %>
-    <div class="grid md:grid-cols-12 gap-6">
-      <div class="md:col-span-8">
-        <article>
-          <header class="flex items-center justify-between">
-            <h2>Your Organizations</h2>
-            <%= link_to new_hcb_payment_account_path, class: "btn success btn-small" do %>
-              + Add Organization
-            <% end %>
-          </header>
-          <div class="p-4">
-            <% if @payment_accounts.any? %>
-              <div class="space-y-3">
-                <% @payment_accounts.each do |account| %>
-                  <div class="flex items-center justify-between p-3 border rounded hover:bg-gray-50">
-                    <div>
-                      <div class="font-medium"><%= account.organization_name %></div>
-                      <div class="text-sm text-gray-500">Added <%= time_ago_in_words(account.created_at) %> ago</div>
-                    </div>
-                    <%= link_to "View", hcb_payment_account_path(account), class: "btn btn-small" %>
-                  </div>
-                <% end %>
-              </div>
-            <% else %>
-              <p class="text-gray-500">No organizations linked yet. Add one to start paying for postage.</p>
-            <% end %>
-          </div>
-        </article>
-      </div>
-
-      <div class="md:col-span-4">
-        <article>
-          <header>
-            <h2>Account Status</h2>
-          </header>
-          <div class="p-4">
-            <div class="text-green-700 mb-4">
-              <span class="font-medium">✓ HCB Connected</span>
-            </div>
-            <p class="text-sm text-gray-600">
-              Your account is linked to HCB. You can pay for postage using any of your organizations' funds.
-            </p>
-          </div>
-        </article>
-      </div>
-    </div>
-  <% else %>
-    <article class="max-w-xl mx-auto text-center">
-      <header>
-        <h2>Connect to HCB</h2>
-      </header>
-      <div class="p-6">
-
-        <p class="text-gray-600 mb-6">
-          Link your HCB account to pay for postage directly from your organization's funds.
-        </p>
-        <%= link_to new_hcb_oauth_connection_path, class: "btn success" do %>
-          Connect HCB Account
-        <% end %>
-      </div>
-    </article>
+    <a href="<%= new_hcb_payment_account_path %>"><button class="btn-success">+ Add Organization</button></a>
   <% end %>
 </div>
+
+<% if current_user.hcb_connected? %>
+  <div class="show-layout">
+    <div class="show-main">
+      <% if @payment_accounts.any? %>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Organization</th>
+              <th>Added</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% @payment_accounts.each do |account| %>
+              <tr>
+                <td><code class="text-sm"><%= account.public_id %></code></td>
+                <td><a href="<%= hcb_payment_account_path(account) %>" class="no-underline"><strong><%= account.organization_name %></strong></a></td>
+                <td class="text-muted"><%= account.created_at.strftime("%b %d, %Y") %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      <% else %>
+        <section class="empty-state">
+          <strong>No organizations linked yet</strong>
+          <div class="text-muted mt-quarter">Add one to start paying for postage.</div>
+        </section>
+      <% end %>
+    </div>
+
+    <div class="show-sidebar">
+      <section class="mb-1">
+        <strong>Account Status</strong>
+        <hr>
+        <div class="mt-half">
+          <div class="flex-row">
+            <span class="text-success">✓</span>
+            <span class="fw-medium text-success">HCB Connected</span>
+          </div>
+          <div class="text-muted mt-half">
+            Your account is linked to HCB. You can pay for postage using any of your organizations' funds.
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+<% else %>
+  <section class="hcb-connect-card">
+    <strong class="text-title">🔗 Connect to HCB</strong>
+    <div class="text-muted mt-half mb-1">Link your HCB account to pay for postage directly from your organization's funds.</div>
+    <a href="<%= new_hcb_oauth_connection_path %>"><button class="btn-success">Connect HCB Account</button></a>
+  </section>
+<% end %>

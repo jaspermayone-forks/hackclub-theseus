@@ -2,9 +2,15 @@
 
 class Components::Base < Phlex::HTML
   include Components
+  register_value_helper :current_user
+  register_value_helper :admin_tool
+  register_value_helper :icon_svg
+  register_value_helper :policy
 
   # Include any helpers you want to be available across all components
   include Phlex::Rails::Helpers::Routes
+  include Phlex::Rails::Helpers::ButtonTo
+  include Phlex::Rails::Helpers::NumberToCurrency
 
   if Rails.env.development?
     def before_template

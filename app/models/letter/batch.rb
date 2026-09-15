@@ -5,6 +5,7 @@
 #  id                          :bigint           not null, primary key
 #  aasm_state                  :string
 #  address_count               :integer
+#  audit_log                   :jsonb
 #  field_mapping               :jsonb
 #  letter_height               :decimal(, )
 #  letter_mailing_date         :date
@@ -12,6 +13,8 @@
 #  letter_return_address_name  :string
 #  letter_weight               :decimal(, )
 #  letter_width                :decimal(, )
+#  process_error               :string
+#  process_options             :jsonb
 #  tags                        :citext           default([]), is an Array
 #  type                        :string           not null
 #  warehouse_user_facing_title :string
@@ -27,6 +30,7 @@
 #
 # Indexes
 #
+#  index_batches_on_aasm_state                (aasm_state)
 #  index_batches_on_hcb_payment_account_id    (hcb_payment_account_id)
 #  index_batches_on_letter_mailer_id_id       (letter_mailer_id_id)
 #  index_batches_on_letter_queue_id           (letter_queue_id)
@@ -48,12 +52,25 @@
 class Letter::Batch < Batch
   def self.policy_class = Letter::BatchPolicy
 
+  include PgSearch::Model
+
+  pg_search_scope :search,
+    against: %i[tags letter_return_address_name],
+    associated_against: {
+      csv_blob: %i[filename],
+      user: %i[email username],
+      letter_queue: %i[name]
+    },
+    using: {
+      tsearch: { prefix: true }
+    }
+
   self.inheritance_column = "type"
   # default_scope { where(type: 'letters') }
   has_many :letters, dependent: :destroy
   belongs_to :mailer_id, class_name: "USPS::MailerId", foreign_key: "letter_mailer_id_id", optional: true
   belongs_to :letter_return_address, class_name: "ReturnAddress", optional: true
-  belongs_to :letter_queue, :class_name => "Letter::Queue", optional: true
+  belongs_to :letter_queue, class_name: "Letter::Queue", optional: true
 
   # Add ActiveStorage attachment for the batch label PDF
   has_one_attached :pdf_label
@@ -91,252 +108,92 @@ class Letter::Batch < Batch
     )
   end
 
-  def process!(options = {})
-    return false unless fields_mapped?
-
-    # Set postage types and user_facing_title for all letters based on options
-    if options[:us_postage_type].present? || options[:intl_postage_type].present? || options[:user_facing_title].present?
-      letters.each do |letter|
-        letter.mailing_date = letter_mailing_date
-        if letter.return_address.us?
-          # For US return addresses, use the US postage type
-          letter.postage_type = options[:us_postage_type]
-        else
-          # For non-US return addresses, must use international origin
-          letter.postage_type = "international_origin"
-        end
-        letter.user_facing_title = options[:user_facing_title] if options[:user_facing_title].present?
-        letter.save!
-      end
-    end
-
-    # Purchase indicia for all letters if needed
-    if options[:payment_account].present? &&
-       (options[:us_postage_type] == "indicia" || options[:intl_postage_type] == "indicia")
-      # Check if there are sufficient funds before processing
-      indicia_cost = letters.includes(:address).sum do |letter|
-        if letter.postage_type == "indicia"
-          if letter.address.us?
-            USPS::PricingEngine.metered_price(
-              letter.processing_category,
-              letter.weight,
-              letter.non_machinable
-            )
-          else
-            flirted = letter.flirt
-            USPS::PricingEngine.metered_price(
-              flirted[:processing_category],
-              flirted[:weight],
-              flirted[:non_machinable]
-            )
-          end
-        else
-          0
-        end
-      end
-
-      unless options[:payment_account].check_funds_available(indicia_cost)
-        raise "...we're out of money (ask Nora to put at least #{ActiveSupport::NumberHelper.number_to_currency(indicia_cost)} in the #{options[:payment_account].display_name} account!)"
-      end
-
-      purchase_batch_indicia(options[:payment_account], hcb_payment_account: options[:hcb_payment_account])
-    end
-
-    # Generate PDF labels with the provided options
-    generate_labels(options)
-
-    mark_processed!
-  end
-
-  def regenerate_labels!(options = {})
-    labels_pdf.purge
-    generate_labels(options)
-  end
-
-  def purchase_batch_indicia(usps_payment_account, hcb_payment_account:)
-    raise ArgumentError, "HCB payment account is required to purchase indicia" if hcb_payment_account.nil?
-    raise ArgumentError, "USPS payment account is required to purchase indicia" if usps_payment_account.nil?
-
-    letters_needing_indicia = letters.select do |letter|
-      letter.postage_type == "indicia" && letter.usps_indicium.nil?
-    end
-
-    return if letters_needing_indicia.empty?
-
-    total_cost_cents = letters_needing_indicia.sum do |letter|
-      (letter.postage * 100).ceil
-    end
-
-    letter_count = letters_needing_indicia.count { |l| l.processing_category == "letter" }
-    flat_count = letters_needing_indicia.count { |l| l.processing_category == "flat" }
-    batch_description = [
-      ("#{letter_count} #{"letter".pluralize(letter_count)}" if letter_count > 0),
-      ("#{flat_count} #{"flat".pluralize(flat_count)}" if flat_count > 0),
-    ].compact.join(" and ")
-
-    transfer_service = HCB::TransferService.new(
-      hcb_payment_account: hcb_payment_account,
-      amount_cents: total_cost_cents,
-      name: "Batch postage for #{public_id} (#{letters_needing_indicia.count} letters) #{Rails.application.routes.url_helpers.letter_batch_path(self)}",
-      memo: "[theseus] postage for a batch of #{batch_description}",
-    )
-    transfer = transfer_service.call
-    unless transfer
-      raise StandardError, transfer_service.errors.join(", ")
-    end
-
-    begin
-      payment_token = usps_payment_account.create_payment_token
-    rescue => e
-      HCB::PaymentAccount.refund_to_organization!(
-        organization_id: hcb_payment_account.organization_id,
-        amount_cents: total_cost_cents,
-        name: "Refund for batch #{public_id} #{Rails.application.routes.url_helpers.letter_batch_path(self)}",
-        memo: "[theseus] postage refund for a batch of #{batch_description}",
-      )
-      raise e
-    end
-
-    ActiveRecord::Base.transaction do
-      update!(
-        hcb_payment_account: hcb_payment_account,
-        hcb_transfer_id: transfer.id,
-      )
-
-      letters_needing_indicia.each do |letter|
-        indicium = USPS::Indicium.create!(
-          letter: letter,
-          payment_account: usps_payment_account,
-          hcb_payment_account: hcb_payment_account,
-          mailing_date: letter_mailing_date,
-        )
-        begin
-          indicium.buy!(payment_token)
-        rescue => e
-          if indicium.raw_json_response.present?
-            Sentry.capture_exception(e, level: :fatal, tags: { money: true, critical: true },
-              extra: { letter_id: letter.id, batch_id: id, response: indicium.raw_json_response })
-          end
-          raise e
-        end
-      end
-    end
-  end
+  # Processing is now handled by BatchProcessJob.
+  # Use: BatchProcessJob.perform_later(batch.id) after setting process_options.
 
   def postage_cost(non_machinable: nil)
-    # Preload associations to avoid N+1 queries
-    letters.includes(:address, :usps_indicium).sum do |letter|
-      effective_non_machinable = non_machinable.nil? ? letter.non_machinable : non_machinable
-
-      if letter.postage_type == "indicia"
-        if letter.usps_indicium.present?
-          # Use actual indicia price if indicia are bought
-          letter.usps_indicium.postage + letter.usps_indicium.fees
-        elsif letter.address.us?
-          # For US mail without bought indicia, use metered price
-          USPS::PricingEngine.metered_price(
-            letter.processing_category,
-            letter.weight,
-            effective_non_machinable
-          )
-        else
-          # For international mail without bought indicia, use FLIRT-ed price
-          flirted = letter.flirt
-          USPS::PricingEngine.metered_price(
-            flirted[:processing_category],
-            flirted[:weight],
-            flirted[:non_machinable]
-          )
-        end
-      else
-        # For stamps, use stamp price for US and desired price for international
-        if letter.address.us?
-          USPS::PricingEngine.domestic_stamp_price(
-            letter.processing_category,
-            letter.weight,
-            effective_non_machinable
-          )
-        else
-          USPS::PricingEngine.fcmi_price(
-            letter.processing_category,
-            letter.weight,
-            letter.address.country
-          )
-        end
-      end
-    rescue USPS::USPSError => e
-      Rails.logger.warn("Skipping letter #{letter.id} (#{letter.address.country}) in postage_cost: #{e.message}")
-      0
+    priced_letters.sum do |letter|
+      priced(letter) { letter.postage_type == "indicia" ? indicia_price(letter, non_machinable) : letter.postage_for(postage_type: letter.postage_type || "stamps", non_machinable: non_machinable) } || 0
     end
   end
 
   alias_method :total_cost, :postage_cost
 
+  # What USPS actually took, read off the indicia rather than the letter's
+  # `indicia_state`. `postage` is only ever persisted by the trailing `save!`
+  # in USPS::Indicium#buy!, i.e. after USPS sold us postage, so a non-null
+  # postage IS the purchase. `indicia_state` is written afterwards and only by
+  # BatchProcessJob, so it's a strict subset: main-era letters (and anything
+  # bought through USPS::IndiciumPurchase) have a real indicium and a nil
+  # state. Filtering on the state made those read as $0 spent, which showed up
+  # as a full-batch "Overpaid" the moment the charge was backfilled.
+  def actual_spent_cents
+    (letters.joins(:usps_indicium)
+      .where.not(usps_indicia: { postage: nil })
+      .sum("COALESCE(usps_indicia.postage, 0) + COALESCE(usps_indicia.fees, 0)") * 100).ceil
+  end
+
+  def indicia_charges = ledger_entries.indicia.charges.live
+
+  LEGACY_CHARGE_NOT_BACKFILLED = "legacy HCB charge not backfilled; run billing:backfill first"
+
+  # main recorded a batch's HCB charge in `hcb_transfer_id` and nothing else.
+  # A batch that died mid-purchase back then kept that column but rolled its
+  # indicia back, so the ledger reads "never charged" and re-processing would
+  # buy the whole batch a second time. Billing::Backfill turns the column into
+  # a settled entry; until it has, refuse to charge.
+  # (Backfill skips `mock` ids, so those must not latch here or they'd never
+  # be processable again.)
+  def unbackfilled_legacy_charge?
+    hcb_transfer_id.present? && !hcb_transfer_id.start_with?("mock") && indicia_charges.none?
+  end
+
+  # Settled postage money, net of refunds, that USPS hasn't consumed yet.
+  # Positive after processing means we overcharged; the job treats it as
+  # prepaid when re-running.
+  def prepaid_cents = indicia_charges.settled.sum(&:net_cents) - actual_spent_cents
+
+  # The newest settled charge with money left on it: where a refund comes from.
+  def refundable_charge = indicia_charges.settled.order(id: :desc).detect { |c| c.net_cents.positive? }
+
+  # Savings (negative) or cost (positive) of indicia vs. retail stamps, per region.
   def postage_cost_difference(us_postage_type: nil, intl_postage_type: nil, non_machinable: nil)
-    # Preload associations to avoid N+1 queries
-    letters.includes(:address, :usps_indicium).each_with_object({ us: 0, intl: 0 }) do |letter, differences|
-      effective_non_machinable = non_machinable.nil? ? letter.non_machinable : non_machinable
-
-      # Determine what postage type this letter would use
-      effective_postage_type = if letter.address.us?
-          us_postage_type || letter.postage_type
-        else
-          intl_postage_type || letter.postage_type
-        end
-
-      # Skip if not switching to indicia
-      next unless effective_postage_type == "indicia"
-
-      if letter.address.us?
-        # For US mail:
-        # Retail price is stamp_price
-        retail_price = USPS::PricingEngine.domestic_stamp_price(
-          letter.processing_category,
-          letter.weight,
-          effective_non_machinable
-        )
-
-        # Indicia price is metered_price
-        indicia_price = if letter.usps_indicium.present?
-            letter.usps_indicium.postage
-          else
-            USPS::PricingEngine.metered_price(
-              letter.processing_category,
-              letter.weight,
-              effective_non_machinable
-            )
-          end
-
-        # Difference should be negative (savings)
-        differences[:us] += indicia_price - retail_price
-      else
-        # For international mail:
-        # Retail price is desired_price
-        retail_price = USPS::PricingEngine.fcmi_price(
-          letter.processing_category,
-          letter.weight,
-          letter.address.country
-        )
-
-        # Indicia price is flirted price (higher than retail)
-        indicia_price = if letter.usps_indicium.present?
-            letter.usps_indicium.postage
-          else
-            # Use flirt to get the closest US price that's higher than the FCMI rate
-            flirted = letter.flirt
-            USPS::PricingEngine.metered_price(
-              flirted[:processing_category],
-              flirted[:weight],
-              flirted[:non_machinable]
-            )
-          end
-
-        # Difference should be positive (additional cost)
-        differences[:intl] += indicia_price - retail_price
-      end
-    rescue USPS::USPSError => e
-      Rails.logger.warn("Skipping letter #{letter.id} (#{letter.address.country}) in postage_cost_difference: #{e.message}")
+    priced_letters.each_with_object({ us: 0, intl: 0 }) do |letter, diff|
+      region = letter.address.us? ? :us : :intl
+      type = (region == :us ? us_postage_type : intl_postage_type) || letter.postage_type
+      next unless type == "indicia"
+      diff[region] += priced(letter) { indicia_price(letter, non_machinable) - letter.postage_for(postage_type: "stamps", non_machinable: non_machinable) } || 0
     end
+  end
+
+  # What processing will charge. Pass `letters:` once they're configured
+  # (BatchProcessJob), or the form's options beforehand.
+  def billing_lines(letters: nil, us_postage_type: nil, intl_postage_type: nil, non_machinable: nil)
+    cents = 0
+    n = 0
+    (letters || priced_letters).each do |letter|
+      type = letters ? letter.postage_type : (letter.address&.us? ? us_postage_type : (intl_postage_type || "international_origin"))
+      next unless type == "indicia" && letter.usps_indicium&.postage.blank?
+      price = letters ? letter.postage : priced(letter) { letter.postage_for(postage_type: "indicia", non_machinable: non_machinable) }
+      next if price.nil?
+      n += 1
+      cents += (price.to_d * 100).ceil
+    end
+    return [] if n.zero?
+    [ Billing::Quote::Line.new(category: :indicia, label: "estimated postage for #{n} #{"letter".pluralize(n)} in #{public_id}", when: :now, amount_cents: cents, count: n) ]
+  end
+
+  private def priced_letters = letters.includes(:address, :usps_indicium)
+
+  private def indicia_price(letter, non_machinable)
+    letter.usps_indicium&.postage.present? ? letter.usps_indicium.cost : letter.postage_for(postage_type: "indicia", non_machinable: non_machinable)
+  end
+
+  private def priced(letter)
+    yield
+  rescue USPS::USPSError => e
+    Rails.logger.warn("Skipping letter #{letter.id} (#{letter.address&.country}) in pricing: #{e.message}")
+    nil
   end
 
   def mailing_date_not_in_past
@@ -363,6 +220,53 @@ class Letter::Batch < Batch
     end
   end
 
+  def generate_labels(options = {})
+    return unless letters.any?
+
+    preloaded_letters = letters.order(:id).includes(:address, :usps_mailer_id, :usps_indicium, :return_address)
+
+    label_options = {}
+    if template_cycle.present?
+      label_options[:template_cycle] = template_cycle
+    elsif template.present?
+      label_options[:template] = template
+    end
+
+    pdf = SnailMail::PhlexService.generate_batch_labels(
+      preloaded_letters,
+      label_options.merge(options)
+    )
+
+    attach_pdf(pdf.render)
+    pdf
+  end
+
+  def regenerate_labels!(options = {})
+    pdf_label.purge
+    generate_labels(options)
+  end
+
+  # Propagate batch attributes to letters after update.
+  # Only propagates sizing/mailing attrs if the batch hasn't been processed yet.
+  def propagate_to_letters!
+    # Was `may_mark_processed?` standing in for "not yet processed"; say it
+    # outright so the aasm transition list can change without silently
+    # changing which batches get their sizing overwritten.
+    unless processed?
+      letters.update_all(
+        height: letter_height,
+        width: letter_width,
+        weight: letter_weight,
+        processing_category: letter_processing_category,
+        mailing_date: letter_mailing_date,
+        usps_mailer_id_id: letter_mailer_id_id,
+        return_address_id: letter_return_address_id,
+        return_address_name: letter_return_address_name,
+      )
+    end
+    letters.update_all(tags: tags, user_facing_title: user_facing_title)
+  end
+
   private
 
   def update_letter_tags
@@ -371,53 +275,6 @@ class Letter::Batch < Batch
 
   def address_fields
     # Only include address fields and rubber_stamps for letter mapping
-    ["rubber_stamps"]
-  end
-
-  def build_mapping(row, address)
-    # Build letter with batch-level specs and extra data
-    letters.build(
-      height: letter_height,
-      width: letter_width,
-      weight: letter_weight,
-      processing_category: letter_processing_category,
-      recipient_email: row&.dig(field_mapping["email"]),
-      address: address,
-      usps_mailer_id: mailer_id,
-      return_address: letter_return_address,
-      return_address_name: letter_return_address_name,
-      rubber_stamps: row&.dig(field_mapping["rubber_stamps"]),
-      tags: tags,
-      user: user,
-    )
-  end
-
-  def generate_labels(options = {})
-    return unless letters.any?
-
-    # Preload associations to avoid N+1 queries
-    preloaded_letters = letters.order(:id).includes(:address, :usps_mailer_id, :usps_indicium, :return_address)
-
-    # Build options for label generation
-    label_options = {}
-
-    # Add template information
-    if template_cycle.present?
-      label_options[:template_cycle] = template_cycle
-    elsif template.present?
-      label_options[:template] = template
-    end
-
-    # Use the SnailMail service to generate labels
-    pdf = SnailMail::PhlexService.generate_batch_labels(
-      preloaded_letters,
-      label_options.merge(options)
-    )
-
-    # Directly attach the PDF to this batch
-    attach_pdf(pdf.render)
-
-    # Return the PDF
-    pdf
+    [ "rubber_stamps" ]
   end
 end

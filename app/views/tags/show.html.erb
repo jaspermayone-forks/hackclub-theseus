@@ -1,81 +1,113 @@
-<h1>Tag: "<%= @tag %>"</h1>
-<div class="time-period-selector" style="margin-bottom: var(--spacing);">
-  <span>currently showing:</span>
-  <select id="time_period">
-    <option value="all_time" <%= 'selected' if @time_period == 'all_time' %>>all-time</option>
-        <option value="ytd" <%= 'selected' if @time_period == 'ytd' %>>year-to-date</option>
-        <option value="month" <%= 'selected' if @time_period == 'month' %>>specific month</option>
-        <option value="last_week" <%= 'selected' if @time_period == 'last_week' %>>last week</option>
-        <option value="last_month" <%= 'selected' if @time_period == 'last_month' %>>last month</option>
-        <option value="last_year" <%= 'selected' if @time_period == 'last_year' %>>last year</option>
-      </select>
+<% content_for :title, "Tag: #{@tag}" %>
 
-      <span id="year_selector" style="display: <%= @time_period.in?(%w[ytd month]) ? 'inline' : 'none' %>">
-      <select id="year">
+<div class="toolbar mb-0 no-border-bottom">
+  <div class="flex-row">
+    <a href="<%= tags_path %>" class="text-muted no-underline">← Tags</a>
+    <strong class="text-title"><%= @tag %></strong>
+    <span class="badge badge-info">Tag</span>
+  </div>
+  <span class="spacer"></span>
+  <div class="flex-row">
+    <select name="time_period" id="time_period" class="m-0">
+      <option value="all_time" <%= "selected" if @time_period == "all_time" %>>All-time</option>
+      <option value="ytd" <%= "selected" if @time_period == "ytd" %>>Year-to-date</option>
+      <option value="month" <%= "selected" if @time_period == "month" %>>Specific month</option>
+      <option value="last_week" <%= "selected" if @time_period == "last_week" %>>Last week</option>
+      <option value="last_month" <%= "selected" if @time_period == "last_month" %>>Last month</option>
+      <option value="last_year" <%= "selected" if @time_period == "last_year" %>>Last year</option>
+    </select>
+    <span id="year_selector" style="display: <%= @time_period.in?(%w[ytd month]) ? 'inline' : 'none' %>">
+      <select name="year" id="year">
         <% @years.each do |y| %>
-          <option value="<%= y %>" <%= 'selected' if y == @year %>><%= y %></option>
-          <% end %>
-        </select>
-      </span>
-      <span id="month_selector" style="display: <%= @time_period == 'month' ? 'inline' : 'none' %>">
-        <select id="month">
-          <% @months.each do |name, num| %>
-            <option value="<%= num %>" <%= 'selected' if num == @month %>><%= name %></option>
-            <% end %>
-          </select>
-        </span>
-        <button onclick="updateTimePeriod()">go!</button>
+          <option value="<%= y %>" <%= "selected" if y == @year %>><%= y %></option>
+        <% end %>
+      </select>
+    </span>
+    <span id="month_selector" style="display: <%= @time_period == 'month' ? 'inline' : 'none' %>">
+      <select name="month" id="month">
+        <% @months.each do |name, num| %>
+          <option value="<%= num %>" <%= "selected" if num == @month %>><%= name %></option>
+        <% end %>
+      </select>
+    </span>
+    <button class="btn-sm" onclick="updateTimePeriod()">Go</button>
+  </div>
+</div>
+
+<div class="show-layout">
+  <div class="show-main">
+    <div class="mb-1 flex-gap-1">
+      <section class="flex-1 tag-stat-box">
+        <div class="tag-stat-value"><%= number_with_delimiter(@warehouse_order_count) %></div>
+        <div class="text-muted">Warehouse Orders</div>
+      </section>
+      <section class="flex-1 tag-stat-box">
+        <div class="tag-stat-value"><%= number_with_delimiter(@letter_count) %></div>
+        <div class="text-muted">Letters</div>
+      </section>
+    </div>
+
+    <div class="mb-1 flex-gap-1">
+      <section class="flex-1">
+        <strong>Letter Costs</strong>
+        <hr>
+        <div class="detail-grid mt-half">
+          <span class="detail-label">Postage</span>
+          <span class="fw-600"><%= number_to_currency(@letter_postage_cost) %></span>
+        </div>
+      </section>
+
+      <section class="flex-1">
+        <strong>Warehouse Costs</strong>
+        <hr>
+        <div class="detail-grid mt-half">
+          <span class="detail-label">Postage</span>
+          <span><%= number_to_currency(@warehouse_order_postage_cost) %></span>
+          <span class="detail-label">Labor</span>
+          <span><%= number_to_currency(@warehouse_order_labor_cost) %></span>
+          <span class="detail-label">Contents</span>
+          <span><%= number_to_currency(@warehouse_order_contents_cost) %></span>
+          <span class="detail-label fw-600">Total</span>
+          <span class="fw-600"><%= number_to_currency(@warehouse_order_total_cost) %></span>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="show-sidebar">
+    <section>
+      <strong>Tag Info</strong>
+      <hr>
+      <div class="detail-grid mt-half">
+        <span class="detail-label">Tag</span>
+        <span class="badge badge-info"><%= @tag %></span>
       </div>
-      <br/>
-      <p>
-        <%= pluralize(@warehouse_order_count, 'warehouse order') %>, <%= pluralize(@letter_count, 'letter') %>
-      </p>
-      <p>
-        <b>Letter postage spent:</b>
-        <%= number_to_currency(@letter_postage_cost) %>
-      </p>
-      <br/>
-      <p>
-        <b>Warehouse costs:</b> <br/>
-        <br/>
-        <b>Postage:</b> <%= number_to_currency(@warehouse_order_postage_cost) %> <br/>
-        <b>Labor:</b> <%= number_to_currency(@warehouse_order_labor_cost) %> <br/>
-        <b>Contents:</b> <%= number_to_currency(@warehouse_order_contents_cost) %> <br/>
-        <b>Total:</b> <%= number_to_currency(@warehouse_order_total_cost) %>
-      </p>
-      <div>
-        <%= link_to "< back to tags", tags_path %>
-      </div>
-      <script>
-        function updateTimePeriod() {
-          const timePeriod = document.getElementById('time_period').value;
-          const year = document.getElementById('year').value;
-          const month = document.getElementById('month').value;
+    </section>
+  </div>
+</div>
 
-          // Show/hide year and month selectors
-          document.getElementById('year_selector').style.display =
-            timePeriod === 'ytd' || timePeriod === 'month' ? 'inline' : 'none';
-          document.getElementById('month_selector').style.display =
-            timePeriod === 'month' ? 'inline' : 'none';
+<script>
+  function updateTimePeriod() {
+    var url = new URL('<%= tag_stats_path(@tag) %>', window.location.origin);
+    url.searchParams.set('time_period', document.getElementById('time_period').value);
 
-          // Build URL
-          let url = '<%= tag_stats_path(@tag) %>?time_period=' + timePeriod;
-          if (timePeriod === 'ytd' || timePeriod === 'month') {
-            url += '&year=' + year;
-          }
-          if (timePeriod === 'month') {
-            url += '&month=' + month;
-          }
+    var timePeriod = document.getElementById('time_period').value;
+    document.getElementById('year_selector').style.display =
+      timePeriod === 'ytd' || timePeriod === 'month' ? 'inline' : 'none';
+    document.getElementById('month_selector').style.display =
+      timePeriod === 'month' ? 'inline' : 'none';
 
-          window.location.href = url;
-        }
+    if (timePeriod === 'ytd' || timePeriod === 'month') url.searchParams.set('year', document.getElementById('year').value);
+    if (timePeriod === 'month') url.searchParams.set('month', document.getElementById('month').value);
 
-        // Update selectors visibility when time period changes
-        document.getElementById('time_period').addEventListener('change', function() {
-          const timePeriod = this.value;
-          document.getElementById('year_selector').style.display =
-            timePeriod === 'ytd' || timePeriod === 'month' ? 'inline' : 'none';
-          document.getElementById('month_selector').style.display =
-            timePeriod === 'month' ? 'inline' : 'none';
-        });
-      </script>
+    window.location.href = url.toString();
+  }
+
+  document.getElementById('time_period').addEventListener('change', function() {
+    const timePeriod = this.value;
+    document.getElementById('year_selector').style.display =
+      timePeriod === 'ytd' || timePeriod === 'month' ? 'inline' : 'none';
+    document.getElementById('month_selector').style.display =
+      timePeriod === 'month' ? 'inline' : 'none';
+  });
+</script>

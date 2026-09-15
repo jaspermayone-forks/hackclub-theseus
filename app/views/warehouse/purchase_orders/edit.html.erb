@@ -1,12 +1,30 @@
-<% content_for :title, "Edit Purchase Order" %>
+<% content_for :title, "Edit Purchase Order #{@purchase_order.order_number.presence || "##{@purchase_order.id}"}" %>
 
-<h1>Edit Purchase Order #<%= @purchase_order.id %></h1>
+<div class="toolbar mb-0 no-border-bottom">
+  <div class="flex-row">
+    <a href="<%= warehouse_purchase_order_path(@purchase_order) %>" class="text-muted no-underline">← <%= @purchase_order.order_number.presence || "##{@purchase_order.id}" %></a>
+    <strong class="text-title">Edit Purchase Order</strong>
+    <% badge_class = { "draft" => "badge", "open" => "badge badge-info", "completed" => "badge badge-success", "deleted" => "badge badge-danger" }[@purchase_order.status] || "badge" %>
+    <span class="<%= badge_class %>"><%= @purchase_order.humanized_state %></span>
+  </div>
+</div>
 
-<%= render "form", purchase_order: @purchase_order %>
-
-<br>
-
-<div>
-  <%= link_to "Show this purchase order", warehouse_purchase_order_path(@purchase_order) %> |
-  <%= link_to "Back to purchase orders", warehouse_purchase_orders_path %>
+<div class="show-layout">
+  <div class="show-main">
+    <%= render "form", purchase_order: @purchase_order %>
+  </div>
+  <div class="show-sidebar">
+    <section>
+      <strong>Order Info</strong>
+      <hr>
+      <div class="detail-grid mt-half">
+        <span class="detail-label">Supplier</span>
+        <span><%= @purchase_order.supplier_name %></span>
+        <span class="detail-label">Created</span>
+        <span><%= @purchase_order.created_at.strftime("%b %d, %Y") %></span>
+        <span class="detail-label">Items</span>
+        <span><%= @purchase_order.line_items.count %></span>
+      </div>
+    </section>
+  </div>
 </div>

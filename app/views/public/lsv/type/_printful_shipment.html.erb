@@ -7,7 +7,7 @@
     <td class="td"><%= printful_shipment.status_text %></td>
     <td class="td">
       <%= link_to "Open", show_lsv_path(LSV.slug_for(printful_shipment), printful_shipment.id),
-                  onclick: "openIframeWindow(this.href, '#{printful_shipment.type_text}: #{printful_shipment.title_text}'); return false;", 
+                  data: { title: "#{printful_shipment.type_text}: #{printful_shipment.title_text}" }, onclick: "openIframeWindow(this.href, this.dataset.title); return false;", 
                   class: 'btn' %>
     </td>
   </tr>
@@ -16,20 +16,20 @@
     <%= printful_shipment.type_text %>: <%= printful_shipment.title_text %>
   <% end %>
   <div class="window-body">
-    <div class="field-row" style="margin-bottom: 1rem;">
-      <b style="margin: 0;"><%= printful_shipment.title_text %></b>
+    <div class="field-row mb-1">
+      <b class="m-0"><%= printful_shipment.title_text %></b>
     </div>
-    <div class="field-row" style="margin-bottom: 0.5rem;">
-      <label style="width: 80px;">Type:</label>
+    <div class="field-row mb-half">
+      <label class="w-80">Type:</label>
       <span><%= printful_shipment.type_text %></span>
     </div>
-    <div class="field-row" style="margin-bottom: 0.5rem;">
-      <label style="width: 80px;">Status:</label>
+    <div class="field-row mb-half">
+      <label class="w-80">Status:</label>
       <span><%= printful_shipment.status_text %></span>
     </div>
     <% if printful_shipment.tracking_number %>
-      <div class="field-row" style="margin-bottom: 0.5rem;">
-        <label style="width: 80px;">Tracking:</label>
+      <div class="field-row mb-half">
+        <label class="w-80">Tracking:</label>
         <% if printful_shipment.tracking_link %>
           <%= link_to(printful_shipment.tracking_number, printful_shipment.tracking_link, target: "_blank", class: "link") %>
         <% else %>
@@ -38,10 +38,10 @@
       </div>
     <% end %>
     <% if printful_shipment.description %>
-      <div class="field-row" style="margin-bottom: 0.5rem;">
-        <label style="width: 80px;">Contents:</label>
+      <div class="field-row mb-half">
+        <label class="w-80">Contents:</label>
         <% if printful_shipment.description.is_a? Array %>
-          <ul class="tree-view" style="margin: 0;">
+          <ul class="tree-view m-0">
             <% printful_shipment.description.each do |item| %>
               <li><%= item %></li>
             <% end %>
@@ -51,29 +51,29 @@
         <% end %>
       </div>
     <% end %>
-    <div class="field-row" style="margin-bottom: 0.5rem;">
-      <label style="width: 80px;">Created:</label>
+    <div class="field-row mb-half">
+      <label class="w-80">Created:</label>
       <span><%= printful_shipment.created_at %></span>
     </div>
     <% back_office_tool do %>
       <% if printful_shipment.fields["%order:pretty_id"] %>
-        <div class="field-row" style="margin-bottom: 0.5rem;">
-          <label style="width: 80px;">Order:</label>
+        <div class="field-row mb-half">
+          <label class="w-80">Order:</label>
           <span>
             <%= link_to printful_shipment.fields["%order:pretty_id"], printful_shipment.fields["%order:dashboard_url"], target: "_blank", class: "link" %>
           </span>
         </div>
       <% end %>
       <% if printful_shipment.fields["packing_slip_url"] %>
-        <div class="field-row" style="margin-bottom: 0.5rem;">
-          <label style="width: 80px;">Packing:</label>
+        <div class="field-row mb-half">
+          <label class="w-80">Packing:</label>
           <span>
             <%= link_to "View Packing Slip", printful_shipment.fields["packing_slip_url"], target: "_blank", class: "link" %>
           </span>
         </div>
       <% end %>
-      <div class="field-row" style="margin-bottom: 0.5rem;">
-        <label style="width: 80px;">Airtable:</label>
+      <div class="field-row mb-half">
+        <label class="w-80">Airtable:</label>
         <span class="internal"><%= link_to(printful_shipment.source_id, printful_shipment.source_url, target: "_blank") %></span>
       </div>
     <% end %>

@@ -53,6 +53,39 @@ class Warehouse::PurchaseOrdersController < ApplicationController
     redirect_to warehouse_purchase_orders_path, status: :see_other, notice: "Purchase order was deleted."
   end
 
+  def submit_for_approval
+    authorize @purchase_order, :submit?
+    @purchase_order.submit_for_approval!
+    Warehouse::CzarMailer.po_submitted(@purchase_order).deliver_later
+    redirect_to warehouse_purchase_order_path(@purchase_order), flash: { success: "Purchase order submitted for approval." }
+  end
+
+  def approve
+    authorize @purchase_order
+    ActiveRecord::Base.transaction do
+      @purchase_order.update!(reviewed_by: current_user)
+      @purchase_order.approve!
+    end
+    Warehouse::CzarMailer.po_approved(@purchase_order).deliver_later
+    redirect_to warehouse_purchase_order_path(@purchase_order), flash: { success: "Purchase order approved." }
+  end
+
+  def reject
+    authorize @purchase_order, :return_for_revision?
+    ActiveRecord::Base.transaction do
+      @purchase_order.update!(reviewed_by: current_user, reviewer_notes: params[:reviewer_notes])
+      @purchase_order.return_for_revision!
+    end
+    Warehouse::CzarMailer.po_returned(@purchase_order).deliver_later
+    redirect_to warehouse_purchase_order_path(@purchase_order), flash: { success: "Purchase order returned for revision." }
+  end
+
+  def revise
+    authorize @purchase_order
+    @purchase_order.revise!
+    redirect_to edit_warehouse_purchase_order_path(@purchase_order), flash: { success: "Purchase order returned to draft for revision." }
+  end
+
   def send_to_zenventory
     authorize @purchase_order
 
@@ -97,7 +130,7 @@ class Warehouse::PurchaseOrdersController < ApplicationController
       :supplier_id,
       :notes,
       :required_by_date,
-      line_items_attributes: %i[id sku_id quantity unit_cost _destroy]
+      line_items_attributes: %i[id sku_id sku_request_id quantity unit_cost _destroy]
     )
   end
 end

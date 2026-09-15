@@ -1,3 +1,5 @@
+require "ostruct"
+
 class TemplatePreviewsController < ApplicationController
   skip_before_action :authenticate_user!
   skip_after_action :verify_authorized
@@ -31,10 +33,10 @@ class TemplatePreviewsController < ApplicationController
 
     names = [
       "Orpheus",
-      "Heidi Hakkuun", 
+      "Heidi Hakkuun",
       "Dinobox",
       "Arcadius",
-      "Cap'n Trashbeard",
+      "Cap'n Trashbeard"
     ]
 
     usps_mailer_id = OpenStruct.new(mid: "111111")
@@ -43,7 +45,7 @@ class TemplatePreviewsController < ApplicationController
     OpenStruct.new(
       address: SnailMail::Preview::FakeAddress.new(
         line_1: "8605 Santa Monica Blvd",
-        line_2: "Apt. 86294", 
+        line_2: "Apt. 86294",
         city: "West Hollywood",
         state: "CA",
         postal_code: "90069",

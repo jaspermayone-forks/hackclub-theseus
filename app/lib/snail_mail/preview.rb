@@ -1,3 +1,5 @@
+require "ostruct"
+
 require "open3"
 require "rmagick"
 require "parallel"
@@ -11,7 +13,7 @@ module SnailMail
       def us_format
         <<~EOA
           #{name_line}
-          #{[line_1, line_2].compact_blank.join("\n")}
+          #{[ line_1, line_2 ].compact_blank.join("\n")}
           #{city}, #{state} #{postal_code}
           #{country}
         EOA
@@ -62,7 +64,7 @@ module SnailMail
         "Heidi Hakkuun",
         "Dinobox",
         "Arcadius",
-        "Cap'n Trashbeard",
+        "Cap'n Trashbeard"
       ]
 
       usps_mailer_id = OpenStruct.new(mid: "111111")
@@ -92,7 +94,7 @@ module SnailMail
       )
 
       Rails.logger.info("generating preview for #{name}...")
-      pdf = SnailMail::PhlexService.generate_label(mock_letter, template: name)
+      pdf = SnailMail::PhlexService.generate_label(mock_letter, template: name, stamps: USPS::McNuggetEngine::PREVIEW_STAMPS)
       pdf_data = pdf.render
 
       png_path = OUTPUT_DIR.join("#{template.name.split("::").last.underscore}.png")

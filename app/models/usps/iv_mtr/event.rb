@@ -15,9 +15,11 @@
 #
 # Indexes
 #
-#  index_usps_iv_mtr_events_on_batch_id      (batch_id)
-#  index_usps_iv_mtr_events_on_letter_id     (letter_id)
-#  index_usps_iv_mtr_events_on_mailer_id_id  (mailer_id_id)
+#  index_usps_iv_mtr_events_on_batch_id                      (batch_id)
+#  index_usps_iv_mtr_events_on_letter_id                     (letter_id)
+#  index_usps_iv_mtr_events_on_mailer_id_id                  (mailer_id_id)
+#  index_usps_iv_mtr_events_on_mailer_id_id_and_happened_at  (mailer_id_id,happened_at)
+#  index_usps_iv_mtr_events_on_mailer_id_id_and_opcode       (mailer_id_id,opcode)
 #
 # Foreign Keys
 #
@@ -51,7 +53,7 @@ class USPS::IVMTR::Event < ApplicationRecord
       name: hydrated.scan_facility_name,
       city: hydrated.scan_facility_city,
       state: hydrated.scan_facility_state,
-      zip: hydrated.scan_facility_zip,
+      zip: hydrated.scan_facility_zip
     }
   end
 
@@ -61,15 +63,6 @@ class USPS::IVMTR::Event < ApplicationRecord
   def handling_event_type_description = hydrated.handling_event_type_description
   def imb_serial_number = hydrated.imb_serial_number
   def imb_mid = hydrated.imb_mid
-  def imb_stid = hydrated.imb_stid
-  def imb = hydrated.imb
-
-  def machine_info
-    {
-      name: hydrated.machine_name,
-      id: hydrated.machine_id,
-    }
-  end
 
   def self.find_or_create_from_payload(payload, batch_id, mailer_id_id)
     event = IvyMeter::Event::PieceEvent.from_json(payload)

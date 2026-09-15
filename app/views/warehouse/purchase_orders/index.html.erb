@@ -1,58 +1,148 @@
 <% content_for :title, "Purchase Orders" %>
-<div class="page-header mb-8 flex justify-between items-center">
-  <h1 class="text-2xl font-bold">Purchase Orders</h1>
-  <div class="actions">
-    <%= success_link_to "Create New Purchase Order", new_warehouse_purchase_order_path do %>
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-      </svg>
-      Create New Purchase Order
-    <% end %>
+
+<div class="toolbar">
+  <div class="flex-row">
+    <a href="<%= warehouse_skus_path %>" class="text-muted no-underline">&larr; SKUs</a>
+    <strong class="text-title">Purchase Orders</strong>
+    <%= render Components::Shared::Jumpcode.new(path: warehouse_purchase_orders_path) %>
   </div>
+  <div class="flex-row">
+    <span class="text-muted"><%= @purchase_orders.count %> orders</span>
+  </div>
+  <span class="spacer"></span>
+  <a href="<%= new_warehouse_purchase_order_path %>" class="btn-success btn-sm">+ New Purchase Order</a>
 </div>
 
-<div class="orders-container">
-  <div class="bg-gray-100 rounded-lg border border-gray-200">
-    <div class="border-b border-gray-200 p-4">
-      <h2 class="text-xl font-medium">All Purchase Orders</h2>
-    </div>
-    <div class="p-6">
-      <% if @purchase_orders.any? %>
-        <table class="table-fixed w-full text-left border border-gray-300 border-collapse">
-          <thead>
-            <tr>
-              <th class="border border-gray-300 p-2">ID</th>
-              <th class="border border-gray-300 p-2">Supplier</th>
-              <th class="border border-gray-300 p-2">Order #</th>
-              <th class="border border-gray-300 p-2">Required By</th>
-              <th class="border border-gray-300 p-2">Status</th>
-              <th class="border border-gray-300 p-2">Created By</th>
-              <th class="border border-gray-300 p-2">Created At</th>
-            </tr>
-          </thead>
-          <tbody>
-            <% @purchase_orders.each do |po| %>
-              <tr>
-                <td class="border border-gray-400 p-2">
-                  <%= link_to po.id, warehouse_purchase_order_path(po) %>
-                </td>
-                <td class="border border-gray-400 p-2"><%= po.supplier_name %></td>
-                <td class="border border-gray-400 p-2"><%= po.order_number %></td>
-                <td class="border border-gray-400 p-2"><%= po.required_by_date&.strftime("%b %d, %Y") %></td>
-                <td class="border border-gray-400 p-2">
-                  <%= render 'status_badge', purchase_order: po %>
-                </td>
-                <td class="border border-gray-400 p-2"><%= po.user&.email %></td>
-                <td class="border border-gray-400 p-2"><%= po.created_at.strftime("%b %d, %Y") %></td>
-              </tr>
-            <% end %>
-          </tbody>
-        </table>
-      <% else %>
-        <div class="text-center py-8">
-          <p class="text-gray-500">No purchase orders found.</p>
-        </div>
-      <% end %>
-    </div>
+<% if @purchase_orders.any? %>
+  <% grouped = @purchase_orders.group_by(&:status) %>
+  <div class="stat-filters" id="stats-container" class="mb-1">
+    <button class="stat-filter" data-filter="all">
+      <span class="stat-count"><%= @purchase_orders.count %></span>
+      <span class="stat-label">All</span>
+    </button>
+    <% if grouped["draft"]&.any? %>
+      <button class="stat-filter" data-filter="draft">
+        <span class="stat-count"><%= grouped["draft"].count %></span>
+        <span class="stat-label">Draft</span>
+      </button>
+    <% end %>
+    <% if grouped["submitted"]&.any? %>
+      <button class="stat-filter" data-filter="submitted">
+        <span class="stat-count"><%= grouped["submitted"].count %></span>
+        <span class="stat-label">Pending Approval</span>
+      </button>
+    <% end %>
+    <% if grouped["approved"]&.any? %>
+      <button class="stat-filter" data-filter="approved">
+        <span class="stat-count"><%= grouped["approved"].count %></span>
+        <span class="stat-label">Approved</span>
+      </button>
+    <% end %>
+    <% if grouped["open"]&.any? %>
+      <button class="stat-filter" data-filter="open">
+        <span class="stat-count"><%= grouped["open"].count %></span>
+        <span class="stat-label">Sent</span>
+      </button>
+    <% end %>
+    <% if grouped["completed"]&.any? %>
+      <button class="stat-filter" data-filter="completed">
+        <span class="stat-count"><%= grouped["completed"].count %></span>
+        <span class="stat-label">Completed</span>
+      </button>
+    <% end %>
+    <% if grouped["returned"]&.any? %>
+      <button class="stat-filter" data-filter="returned">
+        <span class="stat-count"><%= grouped["returned"].count %></span>
+        <span class="stat-label">Returned</span>
+      </button>
+    <% end %>
   </div>
-</div>
+
+  <%
+    badge_classes = {
+      "draft" => "badge",
+      "submitted" => "badge badge-info",
+      "approved" => "badge badge-success",
+      "returned" => "badge badge-warning",
+      "open" => "badge badge-info",
+      "completed" => "badge badge-success",
+      "deleted" => "badge badge-danger"
+    }
+  %>
+
+  <section>
+    <% @purchase_orders.each_with_index do |po, i| %>
+      <% if i > 0 %><hr><% end %>
+      <div class="po-row" data-status="<%= po.status %>">
+        <div class="flex-row">
+          <%= link_to po.order_number.presence || "##{po.id}", warehouse_purchase_order_path(po), class: "mono fw-medium" %>
+          <span class="<%= badge_classes[po.status] || "badge" %>"><%= po.humanized_state %></span>
+          <span class="text-muted"><%= po.supplier_name %></span>
+          <span class="flex-1"></span>
+          <span class="fw-medium"><%= po.line_items.sum(&:quantity) %> units</span>
+          <span class="text-muted"><%= number_to_currency(po.total_cost) %></span>
+          <% if po.required_by_date.present? %>
+            <span class="text-muted">due <%= po.required_by_date.strftime("%b %d") %></span>
+          <% end %>
+          <span class="text-muted"><%= time_ago_in_words(po.created_at) %> ago</span>
+          <% admin_tool do %>
+            <details class="popover">
+              <summary tabindex="0" class="btn-sm">&ctdot;</summary>
+              <div class="popover-menu">
+                <a href="<%= warehouse_purchase_order_path(po) %>">&nbsp;&#x1F441; View</a>
+                <% if po.draft? || po.returned? %>
+                  <a href="<%= edit_warehouse_purchase_order_path(po) %>">&#x270E; Edit</a>
+                <% end %>
+                <% if po.zenventory_id.present? %>
+                  <a href="<%= po.zenventory_url %>" target="_blank">&nearr; Zenventory</a>
+                  <a href="https://app.zenventory.com/printing/printpurchaseorder.php?poid=<%= po.zenventory_id %>" target="_blank">&#x2398; Zenv PDF</a>
+                <% end %>
+              </div>
+            </details>
+          <% end %>
+        </div>
+      </div>
+    <% end %>
+  </section>
+<% else %>
+  <section class="empty-state">
+    <strong>No purchase orders yet</strong>
+    <div class="text-muted mt-half">Create your first purchase order to get started.</div>
+    <div class="mt-1"><a href="<%= new_warehouse_purchase_order_path %>">Create Purchase Order</a></div>
+  </section>
+<% end %>
+
+<script>
+(function() {
+  let selectedStatus = null;
+
+  function getFilters() { return document.querySelectorAll('.stat-filter'); }
+  function getRows() { return document.querySelectorAll('.po-row'); }
+
+  function updateDisplay() {
+    getRows().forEach(row => {
+      row.style.display = (!selectedStatus || selectedStatus === 'all' || row.dataset.status === selectedStatus) ? '' : 'none';
+    });
+    // Also hide <hr> separators between hidden rows
+    document.querySelectorAll('section hr').forEach(hr => {
+      const prev = hr.previousElementSibling;
+      const next = hr.nextElementSibling;
+      if (prev && prev.classList.contains('po-row') && next && next.classList.contains('po-row')) {
+        hr.style.display = (prev.style.display === 'none' || next.style.display === 'none') ? 'none' : '';
+      }
+    });
+    getFilters().forEach(f => {
+      f.style.outline = (f.dataset.filter === selectedStatus) ? '1px solid currentColor' : 'none';
+    });
+  }
+
+  document.addEventListener('click', function(e) {
+    const filter = e.target.closest('.stat-filter');
+    if (filter) {
+      const val = filter.dataset.filter;
+      selectedStatus = (val === 'all' || selectedStatus === val) ? null : val;
+      updateDisplay();
+    }
+  });
+})();
+</script>

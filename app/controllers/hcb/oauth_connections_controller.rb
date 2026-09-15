@@ -1,11 +1,18 @@
 class HCB::OauthConnectionsController < ApplicationController
-  skip_after_action :verify_authorized, only: [:new, :callback]
+  skip_after_action :verify_authorized, only: [ :new, :callback ]
 
   def new
+    session[:hcb_oauth_state] = SecureRandom.urlsafe_base64(32)
     redirect_to hcb_oauth_authorize_url, allow_other_host: true
   end
 
   def callback
+    expected_state = session.delete(:hcb_oauth_state)
+    unless expected_state.present? && ActiveSupport::SecurityUtils.secure_compare(expected_state, params[:state].to_s)
+      redirect_to root_path, alert: "HCB authorization failed (state mismatch)"
+      return
+    end
+
     code = params[:code]
     if code.blank?
       redirect_to root_path, alert: "HCB authorization failed"
@@ -28,7 +35,7 @@ class HCB::OauthConnectionsController < ApplicationController
       )
     end
 
-    redirect_to hcb_payment_accounts_path, notice: "HCB account linked! Now create a payment account."
+    redirect_to hcb_payment_accounts_path, notice: "HCB account linked! Now create a billing profile."
   end
 
   private
@@ -51,6 +58,7 @@ class HCB::OauthConnectionsController < ApplicationController
     hcb_oauth_client.auth_code.authorize_url(
       redirect_uri: callback_hcb_oauth_connection_url,
       scope: "restricted organizations:read transfers:write transactions:write",
+      state: session[:hcb_oauth_state],
     )
   end
 end
