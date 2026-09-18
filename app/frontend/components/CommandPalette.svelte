@@ -191,6 +191,10 @@
       } else {
         publicIdResult = null;
       }
+    } else if (/^th_[A-Za-z0-9]{3,}$/i.test(q)) {
+      doIdLookup(q, 'HCB::Transfer');
+    } else if (/^LE#\d+$/i.test(q)) {
+      doIdLookup(q, 'Ledger Entry');
     } else {
       publicIdResult = null;
       if (publicIdTimeout) clearTimeout(publicIdTimeout);
@@ -255,6 +259,23 @@
         scopedResults = [];
       }
     }, 150);
+  }
+
+  async function doIdLookup(q, model) {
+    publicIdResult = { model, loading: true };
+    if (publicIdTimeout) clearTimeout(publicIdTimeout);
+    publicIdTimeout = setTimeout(async () => {
+      try {
+        const res = await fetch(`/back_office/kbar/search?q=${encodeURIComponent(q)}`);
+        if (!res.ok) return;
+        const results = await res.json();
+        publicIdResult = results.length > 0
+          ? { model, data: results[0] }
+          : { model, notFound: true };
+      } catch (err) {
+        publicIdResult = { model, notFound: true };
+      }
+    }, 100);
   }
 
   async function doPublicIdLookup(q, prefixData) {

@@ -9,6 +9,10 @@ class KbarController < ApplicationController
 
     results = if q.include?("!")
       search_public_id(q)
+    elsif q.start_with?("th_")
+      search_transfer_key(q)
+    elsif q.match?(/\ALE#\d+\z/i)
+      search_ledger_entry(q)
     elsif scope.present?
       search_scope(q, scope)
     else
@@ -98,6 +102,35 @@ class KbarController < ApplicationController
         path: admin_user_path(u)
       }
     end
+  end
+
+  def search_transfer_key(key)
+    return [] unless current_user&.admin?
+    transfer = HCB::Transfer.find_by(idempotency_key: key)
+    return [] unless transfer
+
+    path = transfer_show_billing_index_path(key: transfer.idempotency_key)
+
+    [ {
+      label: transfer.idempotency_key,
+      sublabel: "#{transfer.direction} · #{transfer.state} · #{helpers.number_to_currency(transfer.amount_cents / 100.0)} · #{transfer.billing_profile.organization_name}",
+      path: path
+    } ]
+  end
+
+  def search_ledger_entry(q)
+    return [] unless current_user&.admin?
+    id = q.match(/\ALE#(\d+)\z/i)&.captures&.first
+    return [] unless id
+
+    entry = LedgerEntry.find_by(id: id)
+    return [] unless entry
+
+    [ {
+      label: "LE##{entry.id}",
+      sublabel: "#{entry.category} · #{helpers.number_to_currency(entry.amount_cents / 100.0)} · #{entry.state} · #{entry.billing_profile.organization_name}",
+      path: billing_path(entry)
+    } ]
   end
 
   def record_label(record)
