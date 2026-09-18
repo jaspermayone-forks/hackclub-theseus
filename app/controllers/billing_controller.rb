@@ -1,15 +1,18 @@
 class BillingController < ApplicationController
   def index
     authorize LedgerEntry
-    @billing_profiles = policy_scope(BillingProfile).includes(:ledger_entries)
-    @ledger_entries = policy_scope(LedgerEntry)
-      .includes(:billing_profile, :ledgerable, :hcb_transfer)
-      .order(created_at: :desc)
-      .page(params[:page]).per(50)
+    @billing_profiles = policy_scope(BillingProfile).includes(:ledger_entries, :hcb_transfers)
+
+    entries = policy_scope(LedgerEntry).includes(:billing_profile, :ledgerable, :hcb_transfer)
+    entries = entries.where(category: params[:category]) if params[:category].present? && LedgerEntry.categories.key?(params[:category])
+    entries = entries.where(state: params[:state]) if params[:state].present? && LedgerEntry.states.key?(params[:state])
+    @ledger_entries = entries.order(created_at: :desc).page(params[:page]).per(50)
 
     render Views::Billing::Index.new(
       ledger_entries: @ledger_entries,
       billing_profiles: @billing_profiles,
+      show_all_profiles: params[:show_all].present?,
+      active_filters: { category: params[:category], state: params[:state] },
     )
   end
 
@@ -18,6 +21,13 @@ class BillingController < ApplicationController
     authorize @ledger_entry
 
     render Views::Billing::Show.new(ledger_entry: @ledger_entry)
+  end
+
+  def transfer_show
+    authorize LedgerEntry, :retry_transfer?
+    @transfer = HCB::Transfer.includes(ledger_entries: [ :billing_profile, :ledgerable, :reversals ]).find_by!(idempotency_key: params[:key])
+
+    render Views::Billing::TransferShow.new(transfer: @transfer)
   end
 
   # Admin: re-execute a failed transfer, or force a stuck unknown one back
