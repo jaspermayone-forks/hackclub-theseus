@@ -230,11 +230,11 @@ class Views::Billing::TransferShow < Views::Base
 
       ledgerables.each do |obj|
         case obj
-        when Batch
+        when ::Batch
           batch_card(obj)
-        when Warehouse::Order
+        when ::Warehouse::Order
           order_card(obj)
-        when USPS::Indicium
+        when ::USPS::Indicium
           indicium_card(obj)
         else
           div(class: "mb-half") do
