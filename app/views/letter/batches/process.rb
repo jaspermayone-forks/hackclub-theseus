@@ -184,8 +184,8 @@ class Views::Letter::Batches::Process < Views::Base
 
   def payment_box
     default_usps_id = @batch.letter_queue&.try(:usps_payment_account_id) ||
-      USPS::PaymentAccount.where(id: ENV["DEFAULT_USPS_PACC_ID"]).pick(:id) ||
-      USPS::PaymentAccount.order(:id).pick(:id)
+      USPS::PaymentAccount.active.where(id: ENV["DEFAULT_USPS_PACC_ID"]).pick(:id) ||
+      USPS::PaymentAccount.active.order(:id).pick(:id)
 
     section(id: "payment-section", class: "mb-1") do
       strong { "Payment" }
@@ -197,7 +197,7 @@ class Views::Letter::Batches::Process < Views::Base
           div(class: "mt-075") do
             label(class: "form-field-label") { "USPS Payment Account" }
             select(name: "batch[usps_payment_account_id]", class: "w-100") do
-              USPS::PaymentAccount.all.each do |pa|
+              USPS::PaymentAccount.active.each do |pa|
                 option(value: pa.id, selected: pa.id == default_usps_id.to_i) { pa.display_name }
               end
             end

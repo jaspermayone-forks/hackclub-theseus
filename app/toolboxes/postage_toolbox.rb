@@ -2,7 +2,7 @@ class PostageToolbox < ApplicationToolbox
   tool "List USPS payment accounts for purchasing electronic postage. Returns account names and types", access: :read do
   end
   def payment_accounts
-    @payment_accounts = USPS::PaymentAccount.all
+    @payment_accounts = USPS::PaymentAccount.active
   end
 
   tool "List USPS Mailer IDs used on letter labels and intelligent mail barcodes", access: :read do

@@ -152,8 +152,8 @@ class Letter::BatchesController < BaseBatchesController
     if letter_batch_params[:us_postage_type] == "indicia" || letter_batch_params[:intl_postage_type] == "indicia"
       authorize @batch, :process_batch_with_indicia?, policy_class: Letter::BatchPolicy
 
-      unless USPS::PaymentAccount.exists?(id: letter_batch_params[:usps_payment_account_id])
-        redirect_to process_confirm_letter_batch_path(@batch), alert: "Please select a valid USPS payment account"
+      unless USPS::PaymentAccount.active.exists?(id: letter_batch_params[:usps_payment_account_id])
+        redirect_to process_confirm_letter_batch_path(@batch), alert: "Please select an active USPS payment account"
         return
       end
 

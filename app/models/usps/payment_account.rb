@@ -6,6 +6,7 @@
 #  account_number    :string
 #  account_type      :integer
 #  ach               :boolean
+#  active            :boolean          default(TRUE), not null
 #  manifest_mid      :string
 #  name              :string
 #  permit_number     :string
@@ -24,6 +25,8 @@
 #
 class USPS::PaymentAccount < ApplicationRecord
   belongs_to :usps_mailer_id, class_name: "USPS::MailerId"
+
+  scope :active, -> { where(active: true) }
 
   enum :account_type, {
     EPS: 0,

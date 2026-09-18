@@ -93,7 +93,7 @@ render Components::Shared::ErrorMessages.new(record: queue)
       select_field(
         name: "letter_instant_queue[usps_payment_account_id]",
         label: "USPS Payment Account",
-        options: USPS::PaymentAccount.all.map { |a| [ a.display_name, a.id ] },
+        options: USPS::PaymentAccount.active.map { |a| [ a.display_name, a.id ] },
         selected: queue.usps_payment_account_id
       )
 
