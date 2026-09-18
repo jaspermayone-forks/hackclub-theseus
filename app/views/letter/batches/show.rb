@@ -50,6 +50,17 @@ class Views::Letter::Batches::Show < Views::Base
         if @batch.purchasing? || @batch.generating_labels?
           raw helpers.render(partial: "letter/batches/grid", locals: { cells: purchasing_grid_cells })
           raw helpers.render(partial: "letter/batches/grid_summary", locals: { batch: @batch })
+        elsif @batch.failed?
+          div(class: "mb-half") do
+            span(class: "text-danger") { @batch.process_error || "Batch processing failed" }
+          end
+          raw helpers.render(partial: "letter/batches/grid", locals: { cells: purchasing_grid_cells })
+          raw helpers.render(partial: "letter/batches/grid_summary", locals: { batch: @batch })
+          div(class: "retry-actions-row") do
+            form_with(url: retry_failed_letter_batch_path(@batch), method: :post, class: "form-inline") do
+              button(type: "submit", class: "btn-warning btn-sm") { "⟳ Retry" }
+            end
+          end
         elsif @batch.processed?
           failed_letters = @batch.letters.where(indicia_state: "failed")
           if failed_letters.any?
