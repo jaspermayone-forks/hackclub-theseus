@@ -560,8 +560,11 @@ $gate-green: #14a314;
 }
 
 .batch-cell {
-  display: inline;
-  white-space: nowrap;
+  display: inline-block;
+  width: 1.4em;
+  text-align: center;
+  line-height: 1.4;
+  font-size: 0.8em;
 }
 
 [data-picklist] .batch-cell { cursor: pointer; user-select: none; }
