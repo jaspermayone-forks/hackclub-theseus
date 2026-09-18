@@ -191,6 +191,10 @@ class Letter::BatchesController < BaseBatchesController
   # GET /letter/batches/:id/billing_consent — turbo frame, re-loaded when postage options change
   def billing_consent
     authorize @batch, :process_form?, policy_class: Letter::BatchPolicy
+
+    selected = current_user.billing_profiles.find_by(id: params[:hcb_payment_account_id])
+    selected ||= queue_default_profile
+
     component = Components::MoneyNotice.new(
       lines: @batch.billing_lines(
         us_postage_type: params[:us_postage_type].presence,
@@ -199,7 +203,7 @@ class Letter::BatchesController < BaseBatchesController
       ),
       profiles: current_user.billing_profiles,
       field: "batch[hcb_payment_account_id]",
-      selected: current_user.billing_profiles.find_by(id: params[:hcb_payment_account_id]),
+      selected: selected,
       proceed: "Start Processing",
     )
     render html: helpers.turbo_frame_tag("billing-consent-frame") { render_to_string(component) }, layout: false
@@ -362,6 +366,13 @@ class Letter::BatchesController < BaseBatchesController
   private
 
   def batch_scope = policy_scope(Letter::Batch, policy_scope_class: Letter::BatchPolicy::Scope)
+
+  def queue_default_profile
+    queue_bp = @batch.letter_queue&.try(:billing_profile)
+    return unless queue_bp
+
+    current_user.billing_profiles.find_by(organization_id: queue_bp.organization_id)
+  end
 
   # The picker only ever offers these, so anything else is someone else's
   # private sender.

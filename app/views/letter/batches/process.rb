@@ -76,6 +76,7 @@ class Views::Letter::Batches::Process < Views::Base
   def templates_box
     standard_templates = SnailMail::PhlexService.templates_for_size(:standard)
     envelope_templates = SnailMail::PhlexService.templates_for_size(:envelope)
+    default_template = @batch.letter_queue&.template
 
     section(class: "mb-1") do
       strong { "Label Templates" }
@@ -92,14 +93,14 @@ class Views::Letter::Batches::Process < Views::Base
           if standard_templates.present?
             optgroup(label: "Standard 4x6 Labels") do
               standard_templates.uniq.each do |template|
-                option(value: template.to_s) { template.to_s }
+                option(value: template.to_s, selected: template.to_s == default_template) { template.to_s }
               end
             end
           end
           if envelope_templates.present?
             optgroup(label: "#10 Envelopes") do
               envelope_templates.uniq.each do |template|
-                option(value: template.to_s) { template.to_s }
+                option(value: template.to_s, selected: template.to_s == default_template) { template.to_s }
               end
             end
           end
@@ -214,8 +215,16 @@ class Views::Letter::Batches::Process < Views::Base
       lines: @batch.billing_lines(us_postage_type: "indicia", intl_postage_type: "indicia", non_machinable: false),
       profiles: current_user.billing_profiles,
       field: "batch[hcb_payment_account_id]",
+      selected: queue_default_profile,
       proceed: "Start Processing",
     )
+  end
+
+  def queue_default_profile
+    queue_bp = @batch.letter_queue&.try(:billing_profile)
+    return unless queue_bp
+
+    current_user.billing_profiles.find_by(organization_id: queue_bp.organization_id)
   end
 
   def summary_card
