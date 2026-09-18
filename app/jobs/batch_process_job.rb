@@ -234,11 +234,11 @@ class BatchProcessJob < ApplicationJob
   end
 
   def broadcast_cell(batch, letter, state)
-    icon = state == "purchased" ? "✓" : "×"
+    icon = state == "purchased" ? "✓" : "x"
     Turbo::StreamsChannel.broadcast_replace_to(
       [ batch, :progress ],
       target: "cell-#{letter.id}",
-      html: "<span id=\"cell-#{letter.id}\" class=\"batch-cell batch-cell-#{state}\" title=\"#{letter.public_id}\">#{icon}</span>"
+      html: "<span id=\"cell-#{letter.id}\" class=\"batch-cell batch-cell-#{state}\" title=\"#{letter.public_id}\">[#{icon}]</span>"
     )
   end
 
