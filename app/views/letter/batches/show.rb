@@ -39,7 +39,7 @@ class Views::Letter::Batches::Show < Views::Base
   end
 
   def show_progress?
-    @batch.purchasing? || @batch.generating_labels? || @batch.processed?
+    @batch.purchasing? || @batch.generating_labels? || @batch.processed? || @batch.failed?
   end
 
   def progress_section
