@@ -104,7 +104,7 @@ class Letter::QueuesController < ApplicationController
     batch = @letter_queue.make_batch(user: current_user, limit:)
     User::UpdateTasksJob.perform_later(current_user)
     flash[:success] = "now do something with it!"
-    redirect_to process_confirm_letter_batch_path(batch, uft: @letter_queue.user_facing_title, template: @letter_queue.template)
+    redirect_to process_confirm_letter_batch_path(batch)
   end
 
   def mark_printed_instants_mailed

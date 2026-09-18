@@ -53,6 +53,7 @@ class Views::Letter::Batches::Process < Views::Base
         input(
           type: "text",
           name: "batch[user_facing_title]",
+          value: @batch.user_facing_title,
           placeholder: "e.g. Monthly Newsletter, YSWS Stickers Round 3",
           class: "w-100",
           autofocus: true
@@ -115,7 +116,7 @@ class Views::Letter::Batches::Process < Views::Base
       hr
       div(class: "mt-half") do
         label(class: "form-check-label form-field") do
-          input(type: "checkbox", name: "batch[include_qr_code]", value: "1", checked: true)
+          input(type: "checkbox", name: "batch[include_qr_code]", value: "1", checked: @batch.letter_queue&.include_qr_code != false)
           span { "Include QR code on labels" }
         end
         div do
@@ -134,6 +135,7 @@ class Views::Letter::Batches::Process < Views::Base
   def postage_box
     us_count = @batch.letters.joins(:address).where(addresses: { country: "US" }).count
     intl_count = @batch.letters.count - us_count
+    default_postage = @batch.letter_queue&.postage_type || "indicia"
 
     section(class: "mb-1") do
       strong { "Postage" }
@@ -145,11 +147,11 @@ class Views::Letter::Batches::Process < Views::Base
           span(class: "text-muted ml-half") { "(#{us_count} letters)" }
           div(class: "postage-radio-group") do
             label(class: "postage-radio-label") do
-              input(type: "radio", name: "batch[us_postage_type]", value: "stamps", class: "postage-radio")
+              input(type: "radio", name: "batch[us_postage_type]", value: "stamps", checked: default_postage == "stamps", class: "postage-radio")
               plain " Stamps"
             end
             label(class: "postage-radio-label") do
-              input(type: "radio", name: "batch[us_postage_type]", value: "indicia", checked: true, class: "postage-radio")
+              input(type: "radio", name: "batch[us_postage_type]", value: "indicia", checked: default_postage == "indicia", class: "postage-radio")
               plain " Indicia"
             end
           end
@@ -161,11 +163,11 @@ class Views::Letter::Batches::Process < Views::Base
             span(class: "text-muted ml-half") { "(#{intl_count} letters)" }
             div(class: "postage-radio-group") do
               label(class: "postage-radio-label") do
-                input(type: "radio", name: "batch[intl_postage_type]", value: "stamps", class: "postage-radio")
+                input(type: "radio", name: "batch[intl_postage_type]", value: "stamps", checked: default_postage == "stamps", class: "postage-radio")
                 plain " Stamps"
               end
               label(class: "postage-radio-label") do
-                input(type: "radio", name: "batch[intl_postage_type]", value: "indicia", checked: true, class: "postage-radio")
+                input(type: "radio", name: "batch[intl_postage_type]", value: "indicia", checked: default_postage == "indicia", class: "postage-radio")
                 plain " Indicia"
               end
             end
@@ -181,10 +183,9 @@ class Views::Letter::Batches::Process < Views::Base
   end
 
   def payment_box
-    # Fall back to the oldest account, not whatever Postgres hands back first, so
-    # the pre-selected payer is the same on every render — including when
-    # DEFAULT_USPS_PACC_ID points at an account that no longer exists.
-    default_usps_id = USPS::PaymentAccount.where(id: ENV["DEFAULT_USPS_PACC_ID"]).pick(:id) || USPS::PaymentAccount.order(:id).pick(:id)
+    default_usps_id = @batch.letter_queue&.try(:usps_payment_account_id) ||
+      USPS::PaymentAccount.where(id: ENV["DEFAULT_USPS_PACC_ID"]).pick(:id) ||
+      USPS::PaymentAccount.order(:id).pick(:id)
 
     section(id: "payment-section", class: "mb-1") do
       strong { "Payment" }
