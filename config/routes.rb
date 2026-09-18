@@ -539,6 +539,7 @@ Rails.application.routes.draw do
     resources :billing, only: [ :index, :show ], controller: "billing" do
       collection do
         post "transfers/:transfer_id/retry", action: :retry_transfer, as: :retry_transfer
+        get "transfers/:key", action: :transfer_show, as: :transfer_show
       end
     end
     namespace :hcb do

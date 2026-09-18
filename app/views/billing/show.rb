@@ -9,7 +9,7 @@ class Views::Billing::Show < Views::Base
 
   def view_template
     render Components::Shared::PageToolbar.new(
-      title: "Billing Entry ##{@entry.id}",
+      title: "LE##{@entry.id}",
     )
 
     section do
@@ -22,7 +22,7 @@ class Views::Billing::Show < Views::Base
 
         if @entry.reverses.present?
           span(class: "detail-label") { "Credit against" }
-          span { a(href: billing_path(@entry.reverses)) { "entry ##{@entry.reverses.id} (#{number_to_currency(@entry.reverses.amount)})" } }
+          span { a(href: billing_path(@entry.reverses)) { "LE##{@entry.reverses.id} (#{number_to_currency(@entry.reverses.amount)})" } }
         end
 
         if @entry.reversals.any?
@@ -56,9 +56,11 @@ class Views::Billing::Show < Views::Base
         if (t = @entry.hcb_transfer).present?
           span(class: "detail-label") { "HCB Transfer" }
           span do
-            span(class: "badge") { "#{t.direction} · #{t.state}" }
-            plain " "
-            code { t.remote_id || t.idempotency_key }
+            a(href: transfer_show_billing_index_path(key: t.idempotency_key), class: "no-underline") do
+              span(class: "badge") { "#{t.direction} · #{t.state}" }
+              plain " "
+              code { t.remote_id || t.idempotency_key }
+            end
             if t.last_error.present?
               div(class: "text-muted") { t.last_error }
             end

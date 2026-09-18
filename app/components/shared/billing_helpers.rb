@@ -20,9 +20,11 @@ module Components::Shared::BillingHelpers
     when "unknown" then "badge-warning"
     when "failed" then "badge-danger"
     end
-    span(class: "badge #{variant}", title: transfer.last_error) { transfer.state }
-    plain " "
-    code(class: "text-muted", title: transfer.idempotency_key) { transfer.remote_id&.truncate(16) || transfer.idempotency_key }
+    a(href: transfer_show_billing_index_path(key: transfer.idempotency_key), class: "no-underline") do
+      span(class: "badge #{variant}", title: transfer.last_error) { transfer.state }
+      plain " "
+      code(class: "text-muted", title: transfer.idempotency_key) { transfer.remote_id&.truncate(16) || transfer.idempotency_key }
+    end
   end
 
   def ledgerable_link(entry)
